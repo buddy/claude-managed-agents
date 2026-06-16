@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendExport, decide, extractValue, isPollingMode, maskSecret, mergeEnv, parseEnvText, requireValue } from "../scripts/bootstrap.js";
+import { appendExport, decide, extractValue, isPollingMode, maskSecret, mergeEnv, parseEnvText, requireValue, seedEnvFromExample } from "../scripts/bootstrap.js";
 
 describe("parseEnvText", () => {
   it("tolerates export, quotes, and comments", () => {
@@ -84,6 +84,31 @@ describe("maskSecret", () => {
     const masked = maskSecret("sk-ant-api03-supersecretvalue1234");
     expect(masked).toBe("sk-ant…1234");
     expect(masked).not.toContain("supersecret");
+  });
+});
+
+describe("seedEnvFromExample", () => {
+  it("copies the template only when .env is missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cma-seed-"));
+    const env = join(dir, ".env");
+    const example = join(dir, ".env.example");
+    writeFileSync(example, "export ANTHROPIC_API_KEY=sk-ant-api03-...\n");
+
+    // missing .env -> seeded from the template
+    expect(seedEnvFromExample(env, example)).toBe(true);
+    expect(readFileSync(env, "utf8")).toBe("export ANTHROPIC_API_KEY=sk-ant-api03-...\n");
+
+    // existing .env is never overwritten
+    writeFileSync(env, "export ANTHROPIC_API_KEY=real\n");
+    expect(seedEnvFromExample(env, example)).toBe(false);
+    expect(readFileSync(env, "utf8")).toBe("export ANTHROPIC_API_KEY=real\n");
+  });
+
+  it("is a no-op when there is no template", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cma-seed-"));
+    const env = join(dir, ".env");
+    expect(seedEnvFromExample(env, join(dir, ".env.example"))).toBe(false);
+    expect(existsSync(env)).toBe(false);
   });
 });
 

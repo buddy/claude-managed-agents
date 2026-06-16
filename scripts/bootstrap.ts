@@ -34,6 +34,7 @@ import { confirm, input, password, select } from "@inquirer/prompts";
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
 const ENV_PATH = join(ROOT, ".env");
+const ENV_EXAMPLE_PATH = join(ROOT, ".env.example");
 const TSX = join(ROOT, "node_modules", ".bin", "tsx");
 
 const ENV_ID = "ANTHROPIC_ENVIRONMENT_ID";
@@ -86,6 +87,17 @@ export function appendExport(path: string, name: string, value: string): boolean
   if (existsSync(path) && !existsSync(backup)) copyFileSync(path, backup);
   const prefix = text === "" || text.endsWith("\n") ? "" : "\n";
   appendFileSync(path, `${prefix}export ${name}=${value}\n`);
+  return true;
+}
+
+/**
+ * Seed `.env` from `.env.example` when it's missing, so the user never has to
+ * `cp` it by hand. No-op if `.env` already exists or there's no template.
+ * Returns true only when it actually created the file.
+ */
+export function seedEnvFromExample(envPath: string, examplePath: string): boolean {
+  if (existsSync(envPath) || !existsSync(examplePath)) return false;
+  copyFileSync(examplePath, envPath);
   return true;
 }
 
@@ -315,6 +327,9 @@ async function main(): Promise<void> {
   // (confirming before overwriting anything already in .env); non-interactively
   // (CI/pipes) just fail fast if something is missing rather than hanging.
   if (interactive) {
+    if (seedEnvFromExample(ENV_PATH, ENV_EXAMPLE_PATH)) {
+      console.log("\ncreated .env from .env.example (fill in the values below).");
+    }
     console.log("\nPrerequisites (Ctrl+C to abort; you'll be asked before overwriting anything already set):");
     const env0 = loadEnv();
     for (const spec of PREREQS) await ensureVar(env0, spec);
