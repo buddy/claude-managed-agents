@@ -1,0 +1,38 @@
+{
+  "name": "cma-buddy-sandboxes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Claude Managed Agents control plane on Buddy Sandboxes",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "tsx src/orchestrator.ts",
+    "bootstrap": "tsx scripts/bootstrap.ts",
+    "create-environment": "tsx scripts/create-environment.ts",
+    "create-agent": "tsx scripts/create-agent.ts",
+    "build-snapshot": "tsx scripts/build-snapshot.ts",
+    "deploy-orchestrator": "tsx scripts/deploy-orchestrator.ts",
+    "set-webhook": "tsx scripts/set-webhook.ts",
+    "orchestrator-logs": "tsx scripts/orchestrator-logs.ts",
+    "teardown": "tsx scripts/teardown.ts",
+    "run-session": "tsx example/run-session.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz",
+    "@buddy-works/sandbox-sdk": "^0.1.7",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}
