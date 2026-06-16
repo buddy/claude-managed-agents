@@ -104,6 +104,7 @@ export function seedEnvFromExample(envPath: string, examplePath: string): boolea
 // --- prompt specs + validation (pure parts unit-tested) --------------------
 
 const API_KEY = "ANTHROPIC_API_KEY";
+const BUDDY_REGION = "BUDDY_REGION";
 const BUDDY_TOKEN = "BUDDY_TOKEN";
 const BUDDY_WORKSPACE = "BUDDY_WORKSPACE";
 const BUDDY_PROJECT = "BUDDY_PROJECT";
@@ -112,8 +113,21 @@ export interface VarSpec {
   key: string;
   label: string;
   secret?: boolean;
+  /** When set, prompt with an arrow-key select over these choices instead of free text. */
+  choices?: Array<{ name: string; value: string }>;
+  /** Derive the prompt label from the current env (e.g. a region-specific URL). Overrides `label`. */
+  labelFor?: (env: Record<string, string>) => string;
   /** Returns true if valid, or an error message string. */
   validate?: (value: string) => true | string;
+}
+
+/** Buddy security/PAT page per region (BUDDY_REGION value → URL). */
+export function buddySecurityUrl(region: string | undefined): string {
+  switch (region) {
+    case "EU": return "https://eu.buddy.works/security";
+    case "AP": return "https://asia.buddy.works/security";
+    default: return "https://app.buddy.works/security";
+  }
 }
 
 /** Require a non-empty value, optionally with an expected prefix. */
@@ -134,8 +148,23 @@ export function maskSecret(value: string): string {
 
 /** Things the user must supply before any resource can be created. */
 const PREREQS: VarSpec[] = [
-  { key: API_KEY, label: "ANTHROPIC_API_KEY (admin key, local only — sk-ant-api03-…)", secret: true, validate: requireValue("sk-ant-api03-") },
-  { key: BUDDY_TOKEN, label: "BUDDY_TOKEN (Buddy personal access token)", secret: true, validate: requireValue() },
+  { key: API_KEY, label: "ANTHROPIC_API_KEY (https://platform.claude.com/settings/keys)", secret: true, validate: requireValue("sk-ant-api03-") },
+  {
+    key: BUDDY_REGION,
+    label: "BUDDY_REGION — Buddy region for sandboxes",
+    choices: [
+      { name: "US", value: "US" },
+      { name: "EU", value: "EU" },
+      { name: "Asia", value: "AP" },
+    ],
+  },
+  {
+    key: BUDDY_TOKEN,
+    label: "BUDDY_TOKEN (Buddy personal access token)",
+    labelFor: (env) => `BUDDY_TOKEN — Buddy personal access token (${buddySecurityUrl(env[BUDDY_REGION])})`,
+    secret: true,
+    validate: requireValue(),
+  },
   { key: BUDDY_WORKSPACE, label: "BUDDY_WORKSPACE (workspace domain)", validate: requireValue() },
   { key: BUDDY_PROJECT, label: "BUDDY_PROJECT (project name)", validate: requireValue() },
 ];
@@ -195,11 +224,17 @@ async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<vo
     const overwrite = await confirm({ message: `Overwrite ${spec.key}?`, default: false });
     if (!overwrite) return;
   }
-  const value = (
-    spec.secret
-      ? await password({ message: spec.label, mask: "*", validate: spec.validate })
-      : await input({ message: spec.label, validate: spec.validate })
-  ).trim();
+  const label = spec.labelFor ? spec.labelFor(env) : spec.label;
+  let value: string;
+  if (spec.choices) {
+    value = await select({ message: label, default: current, choices: spec.choices });
+  } else {
+    value = (
+      spec.secret
+        ? await password({ message: label, mask: "*", validate: spec.validate })
+        : await input({ message: label, validate: spec.validate })
+    ).trim();
+  }
   appendExport(ENV_PATH, spec.key, value);
   env[spec.key] = value;
   console.log(`    saved ${spec.key} to .env`);
