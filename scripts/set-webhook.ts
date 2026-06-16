@@ -8,11 +8,17 @@
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
 import { buddyConnection } from "../src/clients.js";
+import { CONFIG } from "../src/config.js";
 import { errLabel } from "../src/util.js";
 
 const ORCH_IDENTIFIER = "cma-orchestrator";
 
 async function main(): Promise<void> {
+  if (CONFIG.triggerMode === "polling") {
+    console.log("TRIGGER_MODE=polling — the orchestrator polls the work queue itself.");
+    console.log("No webhook registration or signing key is required. Nothing to do.");
+    return;
+  }
   const sb = await Sandbox.getByIdentifier(ORCH_IDENTIFIER, { connection: buddyConnection() });
   await sb.refresh();
   const base = sb.data.endpoints?.find((e) => e.name === "webhook")?.endpoint_url;

@@ -98,6 +98,9 @@ app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(
 app.get("/health", async () => ({ status: "ok" }));
 
 app.post("/webhook", async (req, reply) => {
+  if (CONFIG.triggerMode !== "webhook") {
+    return reply.code(503).send({ error: "orchestrator is in polling mode; webhook deliveries are not accepted" });
+  }
   const key = webhookSigningKey();
   if (!key) {
     return reply.code(503).send({ error: "webhook signing key not configured" });
@@ -123,11 +126,34 @@ app.post("/webhook", async (req, reply) => {
 });
 
 async function main(): Promise<void> {
-  log.warn("run exactly ONE orchestrator per environment", { environment: environmentId });
+  const mode = CONFIG.triggerMode;
+  log.warn("run exactly ONE orchestrator per environment", { environment: environmentId, mode });
+
+  if (mode === "webhook" && !webhookSigningKey()) {
+    log.error(
+      "TRIGGER_MODE=webhook needs ANTHROPIC_WEBHOOK_SIGNING_KEY to verify deliveries; " +
+        "set it, or run with TRIGGER_MODE=polling for no inbound endpoint",
+    );
+    process.exit(1);
+  }
+
+  // The HTTP server runs in both modes: webhook mode serves /webhook + /health;
+  // polling mode serves /health only (and rejects /webhook) so Buddy's endpoint
+  // and the deploy/set-webhook liveness probes still work.
   await app.listen({ port: CONFIG.orchPort, host: "0.0.0.0" });
-  log.info("orchestrator listening", { port: CONFIG.orchPort });
-  startPollerLoop(dispatcher, log);
-  startJanitorLoop(janitor, log);
+  log.info("orchestrator listening", { port: CONFIG.orchPort, mode });
+
+  if (mode === "polling") {
+    // The poll loop is the trigger AND covers crash recovery, so the janitor
+    // skips re-dispatch to avoid double-draining.
+    startPollerLoop(dispatcher, log, { primary: true });
+    startJanitorLoop(janitor, log, { recoverCrashedRunners: false });
+  } else {
+    // Webhook is the trigger; the poll loop is a safety net (POLLER_ENABLED) and
+    // the janitor owns crash recovery.
+    startPollerLoop(dispatcher, log, { primary: false });
+    startJanitorLoop(janitor, log, { recoverCrashedRunners: true });
+  }
 }
 
 main().catch((e) => {

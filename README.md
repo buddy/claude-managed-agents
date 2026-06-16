@@ -24,15 +24,36 @@ session.status_run_started  ──▶  Orchestrator sandbox (Buddy HTTP endpoint
                                   posts results, stops the work item, exits idle
 ```
 
-- **Orchestrator** runs inside its own Buddy sandbox, exposed on a public Buddy
-  HTTP endpoint registered as the Anthropic webhook target. It also runs a
-  safety-net polling loop and a janitor.
+- **Orchestrator** runs inside its own Buddy sandbox. In **webhook mode** it is
+  exposed on a public Buddy HTTP endpoint registered as the Anthropic webhook
+  target, with a safety-net polling loop behind it; in **polling mode** it
+  long-polls the work queue itself and needs no inbound endpoint or signing key.
+  A janitor runs in both modes. Pick the mode with `TRIGGER_MODE` (see below).
 - **Worker** sandboxes are born from a prebuilt **snapshot** with the `ant` CLI
   baked in. One per session, identified `cma-worker-<sanitized session id>`.
 - A passing transcript is only proof of *this* path when the matching
   `cma-worker-<session>` sandbox shows an `ant beta:worker run` command.
 
 See [GUIDE.md](./GUIDE.md) for architecture, lifecycle states, and the security model.
+
+## Trigger mode: webhook or polling
+
+Like the `daytona/` cookbook, the orchestrator supports two triggers, selected
+with `TRIGGER_MODE` in `.env` (default `webhook`). Both modes share the same
+sandbox lifecycle, dispatcher, and janitor — only how work is discovered differs.
+
+| | `webhook` (default) | `polling` |
+| --- | --- | --- |
+| Trigger | Anthropic POSTs `session.status_run_started` to the public endpoint | Orchestrator long-polls the work queue continuously |
+| Inbound endpoint | required (public Buddy HTTP URL) | not required (only `/health` is served) |
+| `ANTHROPIC_WEBHOOK_SIGNING_KEY` | required | not used |
+| Console webhook registration | required | skipped |
+| Crash recovery | janitor re-dispatches dead runners | the poll loop re-dispatches reclaimed work |
+| Latency | lower per-event | bounded by the poll interval |
+
+Pick **polling** when you don't want to expose an inbound endpoint or manage a
+webhook secret; pick **webhook** for lower per-event latency. Switch by setting
+`TRIGGER_MODE` and re-running `npm run deploy-orchestrator`.
 
 ## Before you start
 
@@ -69,6 +90,17 @@ The two Console steps are unavoidable — generating an environment key and
 registering a webhook are Console-only in Managed Agents. Everything else is
 automated; ids never need to be pasted by hand.
 
+**Polling mode** (`TRIGGER_MODE=polling` in `.env`) drops the second Console gate
+entirely — there is no webhook to register and no signing key to paste, so
+`bootstrap` goes straight from provisioning to a single deploy:
+
+```bash
+npm run bootstrap          # creates environment → stops: generate the env key in the Console
+#   paste ANTHROPIC_ENVIRONMENT_KEY into .env
+npm run bootstrap          # creates agent + snapshot, deploys in polling mode — done
+npm run run-session        # prove it end to end
+```
+
 ### Manual steps (what bootstrap automates)
 
 ```bash
@@ -93,12 +125,13 @@ npm run typecheck
 
 | Var | Meaning |
 | --- | --- |
+| `TRIGGER_MODE` | `webhook` (default) or `polling` — how the orchestrator discovers queued work. |
 | `ANT_VERSION` | `ant` CLI release baked into the base snapshot (default `1.10.0`). |
 | `ANT_MAX_IDLE` | `ant beta:worker run --max-idle` — primary stop signal. |
 | `WORKER_IDLE_TIMEOUT_SEC` | Buddy per-worker idle auto-stop; must exceed idle gaps. |
 | `MAX_IDLE_DAYS` | Janitor deletes STOPPED workers older than this (`0` disables). |
 | `JANITOR_SECONDS` | Janitor sweep interval. |
-| `POLLER_ENABLED` | Safety-net polling loop (webhook is the primary trigger). |
+| `POLLER_ENABLED` | Webhook-mode safety-net polling loop (ignored in polling mode, where it always runs). |
 
 ## Credential boundary
 

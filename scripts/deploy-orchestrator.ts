@@ -61,6 +61,7 @@ function orchestratorVariables(): VariableInput[] {
     { key: "BUDDY_REGION", value: CONFIG.region },
     { key: "BUDDY_TUNNEL_REGION", value: CONFIG.tunnelRegion },
     { key: "BUDDY_BASE_SNAPSHOT_ID", value: requireBaseSnapshotId() },
+    { key: "TRIGGER_MODE", value: CONFIG.triggerMode },
     { key: "ORCH_PORT", value: String(CONFIG.orchPort) },
     { key: "ANT_MAX_IDLE", value: CONFIG.antMaxIdle },
     { key: "WORKER_RESOURCES", value: CONFIG.workerResources },
@@ -147,16 +148,25 @@ async function main(): Promise<void> {
   }
 
   console.log("");
-  if (url) {
-    console.log(`PUBLIC_WEBHOOK_URL=${url.replace(/\/$/, "")}/webhook`);
-    console.log(`HEALTH_URL=${url.replace(/\/$/, "")}/health`);
-  } else {
+  console.log(`TRIGGER_MODE=${CONFIG.triggerMode}`);
+  const endpointRoot = url?.replace(/\/$/, "");
+  if (endpointRoot && CONFIG.triggerMode === "webhook") {
+    console.log(`PUBLIC_WEBHOOK_URL=${endpointRoot}/webhook`);
+    console.log(`HEALTH_URL=${endpointRoot}/health`);
+  } else if (endpointRoot) {
+    console.log(`HEALTH_URL=${endpointRoot}/health`);
+  } else if (CONFIG.triggerMode === "webhook") {
     console.log("endpoint URL not yet available — run `npm run set-webhook` shortly to read it.");
   }
   console.log("");
-  console.log("Register the webhook URL in the Anthropic Console (subscribe only to");
-  console.log("session.status_run_started), copy the signing key into .env as");
-  console.log("ANTHROPIC_WEBHOOK_SIGNING_KEY, then re-run deploy-orchestrator.");
+  if (CONFIG.triggerMode === "polling") {
+    console.log("Polling mode: the orchestrator long-polls the work queue itself.");
+    console.log("No webhook registration and no signing key are required.");
+  } else {
+    console.log("Register the webhook URL in the Anthropic Console (subscribe only to");
+    console.log("session.status_run_started), copy the signing key into .env as");
+    console.log("ANTHROPIC_WEBHOOK_SIGNING_KEY, then re-run deploy-orchestrator.");
+  }
 }
 
 main().catch((e) => {

@@ -173,15 +173,26 @@ export class Janitor {
   }
 }
 
-/** Non-overlapping janitor loop. Returns a stop() function. */
-export function startJanitorLoop(janitor: Janitor, log: Logger): () => void {
+/**
+ * Non-overlapping janitor loop. Returns a stop() function.
+ *
+ * `recoverCrashedRunners` is true in webhook mode (the janitor is the only thing
+ * watching for a sandbox whose `ant` process died while its session is still
+ * running) and false in polling mode (the continuous poll loop already
+ * re-dispatches reclaimed work, so the janitor would only double-drain).
+ */
+export function startJanitorLoop(
+  janitor: Janitor,
+  log: Logger,
+  opts: { recoverCrashedRunners: boolean } = { recoverCrashedRunners: true },
+): () => void {
   let stopped = false;
   (async () => {
     while (!stopped) {
       await sleep(CONFIG.janitorSeconds * 1000);
       if (stopped) break;
       try {
-        await janitor.janitorOnce();
+        await janitor.janitorOnce(opts.recoverCrashedRunners);
       } catch (e) {
         log.warn("janitor pass crashed", { err: errLabel(e) });
       }

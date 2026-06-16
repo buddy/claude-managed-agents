@@ -48,8 +48,28 @@ export type SandboxResources =
 
 export const BETA = str("ANTHROPIC_BETA") ?? "managed-agents-2026-04-01";
 
+/**
+ * How the orchestrator learns there is queued work to dispatch.
+ *
+ * - `webhook`: Anthropic POSTs `session.status_run_started` to the orchestrator's
+ *   public HTTP endpoint (primary trigger); a safety-net poll loop and the
+ *   janitor's crash recovery back it up. Requires `ANTHROPIC_WEBHOOK_SIGNING_KEY`.
+ * - `polling`: the orchestrator long-polls the work queue continuously as its
+ *   only trigger — no inbound endpoint, no webhook secret. The poll loop also
+ *   covers crash recovery, so the janitor leaves that case alone.
+ */
+export type TriggerMode = "webhook" | "polling";
+
+function triggerMode(): TriggerMode {
+  const v = str("TRIGGER_MODE")?.toLowerCase();
+  return v === "polling" ? "polling" : "webhook";
+}
+
 export const CONFIG = {
   beta: BETA,
+
+  // Trigger
+  triggerMode: triggerMode(),
 
   // Worker runtime
   antVersion: str("ANT_VERSION") ?? "1.10.0",

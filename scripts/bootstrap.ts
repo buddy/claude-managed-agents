@@ -33,6 +33,7 @@ const ENV_KEY = "ANTHROPIC_ENVIRONMENT_KEY";
 const AGENT_ID = "ANTHROPIC_AGENT_ID";
 const SNAPSHOT_ID = "BUDDY_BASE_SNAPSHOT_ID";
 const SIGNING_KEY = "ANTHROPIC_WEBHOOK_SIGNING_KEY";
+const TRIGGER_MODE = "TRIGGER_MODE";
 
 // --- .env read / append + output parsing (pure, unit-tested) ---------------
 
@@ -84,10 +85,16 @@ export function appendExport(path: string, name: string, value: string): boolean
 
 export type Step = "create_env" | "gate_env_key" | "provision" | "gate_webhook" | "finalize";
 
+/** Polling mode needs no inbound endpoint, so there is no webhook to register. */
+export function isPollingMode(env: Record<string, string>): boolean {
+  return (env[TRIGGER_MODE] ?? "").toLowerCase() === "polling";
+}
+
 export function decide(env: Record<string, string>): Step {
   if (!env[ENV_ID]) return "create_env";
   if (!env[ENV_KEY]) return "gate_env_key";
   if (!env[AGENT_ID] || !env[SNAPSHOT_ID]) return "provision";
+  if (isPollingMode(env)) return "finalize"; // no webhook gate in polling mode
   if (!env[SIGNING_KEY]) return "gate_webhook";
   return "finalize";
 }
@@ -128,13 +135,15 @@ function runScript(rel: string): Promise<string> {
 }
 
 function printState(env: Record<string, string>): void {
+  const polling = isPollingMode(env);
   const rows: Array<[string, string]> = [
+    ["trigger mode", polling ? "polling" : "webhook"],
     ["environment", env[ENV_ID] ?? ""],
     ["environment key", env[ENV_KEY] ? "set" : ""],
     ["agent", env[AGENT_ID] ?? ""],
     ["base snapshot", env[SNAPSHOT_ID] ?? ""],
-    ["webhook signing key", env[SIGNING_KEY] ? "set" : ""],
   ];
+  if (!polling) rows.push(["webhook signing key", env[SIGNING_KEY] ? "set" : ""]);
   console.log("\nstate:");
   for (const [label, detail] of rows) {
     console.log(`  ${detail ? "ok " : "-- "} ${label}: ${detail || "not set"}`);
@@ -188,7 +197,7 @@ function planLabel(step: Step): string {
     case "gate_env_key": return "GATE: generate the environment key in the Console";
     case "provision": return "create the agent + base snapshot";
     case "gate_webhook": return "deploy, then GATE: register the webhook in the Console";
-    case "finalize": return "re-deploy to pick up the signing key — then you're done";
+    case "finalize": return "deploy the orchestrator — then you're done";
   }
 }
 

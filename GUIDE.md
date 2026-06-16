@@ -95,9 +95,25 @@ left by a SIGKILLed runner doesn't block the next prompt for that session.
 
 ## Triggers
 
-- **Webhook** is the primary trigger (`POST /webhook`).
-- **Polling** (`src/poller.ts`) is a safety net so a restart after acking a
-  webhook can't strand queued work. Disable with `POLLER_ENABLED=false`.
+`TRIGGER_MODE` (default `webhook`) selects how the orchestrator discovers queued
+work. Both modes share the dispatcher (`src/worker-dispatch.ts`) and the janitor;
+only the trigger and the crash-recovery owner differ.
+
+- **`webhook`** — Anthropic POSTs `session.status_run_started` to `POST /webhook`
+  (signature-verified with `ANTHROPIC_WEBHOOK_SIGNING_KEY`). The poll loop
+  (`src/poller.ts`) runs behind it as a safety net so a restart after acking a
+  webhook can't strand queued work; disable it with `POLLER_ENABLED=false`. The
+  janitor owns crash recovery (re-dispatches dead runners). The orchestrator
+  **fails fast at startup** if the signing key is missing.
+- **`polling`** — the poll loop is the only trigger and runs continuously,
+  ignoring `POLLER_ENABLED`. No inbound endpoint and no signing key are needed
+  (`POST /webhook` returns 503; only `/health` is served, so Buddy's endpoint and
+  the deploy/liveness probes still work). Because the poll loop already
+  re-dispatches reclaimed work, the janitor skips crash recovery to avoid
+  double-draining.
+
+Pick `polling` to avoid exposing an endpoint or managing a webhook secret; pick
+`webhook` for lower per-event latency.
 
 ## Single-claimant rule
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendExport, decide, extractValue, mergeEnv, parseEnvText } from "../scripts/bootstrap.js";
+import { appendExport, decide, extractValue, isPollingMode, mergeEnv, parseEnvText } from "../scripts/bootstrap.js";
 
 describe("parseEnvText", () => {
   it("tolerates export, quotes, and comments", () => {
@@ -47,6 +47,22 @@ describe("decide", () => {
   });
   it("provisions when only the snapshot is missing", () => {
     expect(decide({ ...full, BUDDY_BASE_SNAPSHOT_ID: "", ANTHROPIC_WEBHOOK_SIGNING_KEY: "" })).toBe("provision");
+  });
+  it("polling mode skips the webhook gate and finalizes once provisioned", () => {
+    const polling = { TRIGGER_MODE: "polling", ANTHROPIC_ENVIRONMENT_ID: "e", ANTHROPIC_ENVIRONMENT_KEY: "k" };
+    expect(decide({ ...polling, ANTHROPIC_AGENT_ID: "a", BUDDY_BASE_SNAPSHOT_ID: "s" })).toBe("finalize");
+    // still walks the earlier steps in order
+    expect(decide({ TRIGGER_MODE: "polling" })).toBe("create_env");
+    expect(decide({ ...polling, ANTHROPIC_AGENT_ID: "a" })).toBe("provision");
+  });
+});
+
+describe("isPollingMode", () => {
+  it("is case-insensitive and defaults to webhook", () => {
+    expect(isPollingMode({ TRIGGER_MODE: "polling" })).toBe(true);
+    expect(isPollingMode({ TRIGGER_MODE: "POLLING" })).toBe(true);
+    expect(isPollingMode({ TRIGGER_MODE: "webhook" })).toBe(false);
+    expect(isPollingMode({})).toBe(false);
   });
 });
 
