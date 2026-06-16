@@ -193,7 +193,7 @@ export function environmentKeyUrl(envId: string | undefined): string {
 const ENV_KEY_SPEC: VarSpec = {
   key: ENV_KEY,
   label: "ANTHROPIC_ENVIRONMENT_KEY (from the Console — sk-ant-oat01-…)",
-  labelFor: (env) => `ANTHROPIC_ENVIRONMENT_KEY — Generate environment key: ${environmentKeyUrl(env[ENV_ID])}`,
+  labelFor: (env) => `ANTHROPIC_ENVIRONMENT_KEY — Generate Environment key (${environmentKeyUrl(env[ENV_ID])})`,
   secret: true,
   validate: requireValue("sk-ant-oat01-"),
 };
@@ -410,10 +410,10 @@ async function main(): Promise<void> {
   for (;;) {
     const env = loadEnv();
     const step = decide(env);
-    // Skip the state dump right before an interactive gate prompt — the prompt
-    // itself carries the context, so the table is just noise above the question.
-    const interactiveGate = interactive && (step === "gate_env_key" || step === "gate_webhook");
-    if (!interactiveGate) printState(env);
+    // Only show the state table in non-interactive (CI) runs, where it's the
+    // status report. In an interactive run it's just noise above the prompts and
+    // script output, which already narrate progress on their own.
+    if (!interactive) printState(env);
 
     if (step === "create_env") {
       await ensureFromScript("creating the self-hosted environment", "scripts/create-environment.ts", ENV_ID);
