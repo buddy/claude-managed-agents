@@ -1,10 +1,16 @@
 /**
  * Guided, autonomous-but-transparent setup for the CMA-on-Buddy cookbook.
  *
- * Runs every deterministic step it can without prompting, and stops only at the
- * two Anthropic Console gates — generate the environment key, and register the
- * webhook — where a human must act in a browser. Re-run after each gate to
- * continue where it left off.
+ * Walks an interactive form for the prerequisites (ANTHROPIC_API_KEY, Buddy
+ * token/workspace/project, trigger mode) — showing already-set values masked and
+ * asking before overwriting — then runs every deterministic step it can. The two
+ * Anthropic Console gates (generate the environment key, register the webhook)
+ * require a human in a browser; in an interactive run it prompts for each key
+ * inline once you've done the Console action, so there is nothing to re-run.
+ *
+ * In a non-interactive run (CI, pipes — no TTY) it never prompts: it fails fast
+ * if a prerequisite is missing, and at each gate falls back to printing the
+ * paste-into-.env + re-run instructions.
  *
  * Kills the multi-step copy/paste churn:
  *   - reads `.env` directly (no `source .env` between runs);
@@ -22,6 +28,8 @@ import { spawn } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { confirm, input, password, select } from "@inquirer/prompts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
@@ -81,6 +89,48 @@ export function appendExport(path: string, name: string, value: string): boolean
   return true;
 }
 
+// --- prompt specs + validation (pure parts unit-tested) --------------------
+
+const API_KEY = "ANTHROPIC_API_KEY";
+const BUDDY_TOKEN = "BUDDY_TOKEN";
+const BUDDY_WORKSPACE = "BUDDY_WORKSPACE";
+const BUDDY_PROJECT = "BUDDY_PROJECT";
+
+export interface VarSpec {
+  key: string;
+  label: string;
+  secret?: boolean;
+  /** Returns true if valid, or an error message string. */
+  validate?: (value: string) => true | string;
+}
+
+/** Require a non-empty value, optionally with an expected prefix. */
+export function requireValue(prefix?: string): (value: string) => true | string {
+  return (value: string) => {
+    const v = value.trim();
+    if (!v) return "required — paste a value";
+    if (prefix && !v.startsWith(prefix)) return `expected a value starting with "${prefix}"`;
+    return true;
+  };
+}
+
+/** Show a secret without leaking it: first 6 + last 4 chars, rest masked. */
+export function maskSecret(value: string): string {
+  if (value.length <= 12) return "•".repeat(value.length);
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+/** Things the user must supply before any resource can be created. */
+const PREREQS: VarSpec[] = [
+  { key: API_KEY, label: "ANTHROPIC_API_KEY (admin key, local only — sk-ant-api03-…)", secret: true, validate: requireValue("sk-ant-api03-") },
+  { key: BUDDY_TOKEN, label: "BUDDY_TOKEN (Buddy personal access token)", secret: true, validate: requireValue() },
+  { key: BUDDY_WORKSPACE, label: "BUDDY_WORKSPACE (workspace domain)", validate: requireValue() },
+  { key: BUDDY_PROJECT, label: "BUDDY_PROJECT (project name)", validate: requireValue() },
+];
+
+const ENV_KEY_SPEC: VarSpec = { key: ENV_KEY, label: "ANTHROPIC_ENVIRONMENT_KEY (from the Console — sk-ant-oat01-…)", secret: true, validate: requireValue("sk-ant-oat01-") };
+const SIGNING_KEY_SPEC: VarSpec = { key: SIGNING_KEY, label: "ANTHROPIC_WEBHOOK_SIGNING_KEY (Console signing secret — whsec_…)", secret: true, validate: requireValue("whsec_") };
+
 // --- flow decision (pure, unit-tested) -------------------------------------
 
 export type Step = "create_env" | "gate_env_key" | "provision" | "gate_webhook" | "finalize";
@@ -112,6 +162,50 @@ function loadEnv(): Record<string, string> {
     if (/\.\.\.\s*$/.test(v)) delete merged[k];
   }
   return merged;
+}
+
+/** True only when we can safely block on stdin for prompts (not in CI/pipes). */
+function isInteractive(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+/**
+ * Ensure `spec.key` has a value, prompting interactively. If it is already set
+ * (placeholders are stripped by loadEnv), show it masked and ask whether to
+ * overwrite, defaulting to NO. New values are appended to .env and reflected in
+ * the passed-in `env` so the caller sees them without a reload.
+ */
+async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<void> {
+  const current = env[spec.key];
+  if (current) {
+    const shown = spec.secret ? maskSecret(current) : current;
+    console.log(`  ok ${spec.key} already set (${shown})`);
+    const overwrite = await confirm({ message: `Overwrite ${spec.key}?`, default: false });
+    if (!overwrite) return;
+  }
+  const value = (
+    spec.secret
+      ? await password({ message: spec.label, mask: "*", validate: spec.validate })
+      : await input({ message: spec.label, validate: spec.validate })
+  ).trim();
+  appendExport(ENV_PATH, spec.key, value);
+  env[spec.key] = value;
+  console.log(`    saved ${spec.key} to .env`);
+}
+
+/** Prompt for the trigger mode (webhook vs polling) and persist the choice. */
+async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
+  const current = isPollingMode(env) ? "polling" : "webhook";
+  const mode = await select({
+    message: "TRIGGER_MODE — how the orchestrator learns about queued work",
+    default: current,
+    choices: [
+      { name: "webhook — Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)", value: "webhook" },
+      { name: "polling — orchestrator long-polls the queue (no endpoint, no secret)", value: "polling" },
+    ],
+  });
+  appendExport(ENV_PATH, TRIGGER_MODE, mode);
+  env[TRIGGER_MODE] = mode;
 }
 
 /** Run a cookbook script via tsx, teeing its output live while capturing stdout. */
@@ -156,10 +250,7 @@ function gateEnvKey(env: Record<string, string>): void {
       "   1. Open https://platform.claude.com and select the workspace/project for\n" +
       "      your ANTHROPIC_API_KEY, then open Managed Agents > Environments.\n" +
       `   2. Choose the environment shown above (${env[ENV_ID]}).\n` +
-      '   3. Click "Generate environment key".\n' +
-      `   4. Add it to .env:   export ${ENV_KEY}=sk-ant-oat01-...\n` +
-      "   5. Re-run:           npm run bootstrap\n" +
-      "   (No `source .env` needed — bootstrap reads .env directly.)",
+      '   3. Click "Generate environment key".',
   );
 }
 
@@ -170,9 +261,16 @@ function gateWebhook(url: string | undefined): void {
       "   1. Open https://platform.claude.com, select the same workspace/project,\n" +
       "      then create a Managed Agents webhook.\n" +
       "   2. Subscribe ONLY to session.status_run_started.\n" +
-      `   3. Set the destination URL to: ${shown}\n` +
-      `   4. Add the one-time signing secret to .env:   export ${SIGNING_KEY}=whsec_...\n` +
-      "   5. Re-run:                                     npm run bootstrap",
+      `   3. Set the destination URL to: ${shown}`,
+  );
+}
+
+/** Non-interactive fallback: tell the user to paste the key and re-run. */
+function manualTail(spec: VarSpec): void {
+  console.log(
+    `\n   Then add it to .env:   export ${spec.key}=...\n` +
+      "   And re-run:            npm run bootstrap\n" +
+      "   (No `source .env` needed — bootstrap reads .env directly.)",
   );
 }
 
@@ -211,6 +309,24 @@ async function main(): Promise<void> {
     return;
   }
 
+  const interactive = isInteractive();
+
+  // Phase 0 — prerequisites form. Interactively walk each required value
+  // (confirming before overwriting anything already in .env); non-interactively
+  // (CI/pipes) just fail fast if something is missing rather than hanging.
+  if (interactive) {
+    console.log("\nPrerequisites (Ctrl+C to abort; you'll be asked before overwriting anything already set):");
+    const env0 = loadEnv();
+    for (const spec of PREREQS) await ensureVar(env0, spec);
+    await ensureTriggerMode(env0);
+  } else {
+    const env0 = loadEnv();
+    const missing = PREREQS.filter((s) => !env0[s.key]).map((s) => s.key);
+    if (missing.length) {
+      throw new Error(`missing required env (non-interactive run): ${missing.join(", ")}`);
+    }
+  }
+
   let lastUrl: string | undefined;
   // Loop through autonomous steps until we hit a gate or finish. Each iteration
   // reloads .env so freshly-pasted keys take effect immediately.
@@ -225,6 +341,11 @@ async function main(): Promise<void> {
     }
     if (step === "gate_env_key") {
       gateEnvKey(env);
+      if (interactive) {
+        await ensureVar(env, ENV_KEY_SPEC);
+        if (env[ENV_KEY]) continue;
+      }
+      manualTail(ENV_KEY_SPEC);
       return;
     }
     if (step === "provision") {
@@ -235,6 +356,11 @@ async function main(): Promise<void> {
     if (step === "gate_webhook") {
       lastUrl = await deploy();
       gateWebhook(lastUrl);
+      if (interactive) {
+        await ensureVar(env, SIGNING_KEY_SPEC);
+        if (env[SIGNING_KEY]) continue;
+      }
+      manualTail(SIGNING_KEY_SPEC);
       return;
     }
     // finalize

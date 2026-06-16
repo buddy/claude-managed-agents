@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendExport, decide, extractValue, isPollingMode, mergeEnv, parseEnvText } from "../scripts/bootstrap.js";
+import { appendExport, decide, extractValue, isPollingMode, maskSecret, mergeEnv, parseEnvText, requireValue } from "../scripts/bootstrap.js";
 
 describe("parseEnvText", () => {
   it("tolerates export, quotes, and comments", () => {
@@ -63,6 +63,27 @@ describe("isPollingMode", () => {
     expect(isPollingMode({ TRIGGER_MODE: "POLLING" })).toBe(true);
     expect(isPollingMode({ TRIGGER_MODE: "webhook" })).toBe(false);
     expect(isPollingMode({})).toBe(false);
+  });
+});
+
+describe("requireValue", () => {
+  it("rejects blank and enforces an optional prefix", () => {
+    expect(requireValue()("")).toBe("required — paste a value");
+    expect(requireValue()("  ")).toBe("required — paste a value");
+    expect(requireValue()("anything")).toBe(true);
+    expect(requireValue("sk-ant-api03-")("nope")).toContain("sk-ant-api03-");
+    expect(requireValue("sk-ant-api03-")("sk-ant-api03-xyz")).toBe(true);
+    // trims before checking the prefix
+    expect(requireValue("whsec_")("  whsec_abc ")).toBe(true);
+  });
+});
+
+describe("maskSecret", () => {
+  it("never reveals the middle of a secret", () => {
+    expect(maskSecret("short")).toBe("•••••");
+    const masked = maskSecret("sk-ant-api03-supersecretvalue1234");
+    expect(masked).toBe("sk-ant…1234");
+    expect(masked).not.toContain("supersecret");
   });
 });
 
