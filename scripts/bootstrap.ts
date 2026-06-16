@@ -32,10 +32,17 @@ import { styleText } from "node:util";
 
 import { confirm, input, password, select } from "@inquirer/prompts";
 
-/** Shared prompt theme: questions in blue, the submitted answer in white. */
+/**
+ * Shared prompt theme: question text in cyan, with any parenthetical aside
+ * (URLs, hints) in white — matching the model accent in the Claude Code
+ * status line. The submitted answer is white too.
+ */
 const PROMPT_THEME = {
   style: {
-    message: (text: string) => styleText("blue", text),
+    message: (text: string) =>
+      text.replace(/(\([^)]*\))|([^(]+)/g, (_m, paren, rest) =>
+        paren ? styleText("white", paren) : styleText("cyan", rest),
+      ),
     answer: (text: string) => styleText("white", text),
   },
 };
@@ -402,8 +409,11 @@ async function main(): Promise<void> {
   // reloads .env so freshly-pasted keys take effect immediately.
   for (;;) {
     const env = loadEnv();
-    printState(env);
     const step = decide(env);
+    // Skip the state dump right before an interactive gate prompt — the prompt
+    // itself carries the context, so the table is just noise above the question.
+    const interactiveGate = interactive && (step === "gate_env_key" || step === "gate_webhook");
+    if (!interactiveGate) printState(env);
 
     if (step === "create_env") {
       await ensureFromScript("creating the self-hosted environment", "scripts/create-environment.ts", ENV_ID);
