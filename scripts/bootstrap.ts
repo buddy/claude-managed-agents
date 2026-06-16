@@ -28,8 +28,17 @@ import { spawn } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { styleText } from "node:util";
 
 import { confirm, input, password, select } from "@inquirer/prompts";
+
+/** Shared prompt theme: questions in blue, the submitted answer in white. */
+const PROMPT_THEME = {
+  style: {
+    message: (text: string) => styleText("blue", text),
+    answer: (text: string) => styleText("white", text),
+  },
+};
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
@@ -169,7 +178,18 @@ const PREREQS: VarSpec[] = [
   { key: BUDDY_PROJECT, label: "BUDDY_PROJECT (project name)", validate: requireValue() },
 ];
 
-const ENV_KEY_SPEC: VarSpec = { key: ENV_KEY, label: "ANTHROPIC_ENVIRONMENT_KEY (from the Console — sk-ant-oat01-…)", secret: true, validate: requireValue("sk-ant-oat01-") };
+/** Console deep-link to the environment where the user clicks "Generate environment key". */
+export function environmentKeyUrl(envId: string | undefined): string {
+  return `https://platform.claude.com/workspaces/default/environments/${envId ?? ""}`;
+}
+
+const ENV_KEY_SPEC: VarSpec = {
+  key: ENV_KEY,
+  label: "ANTHROPIC_ENVIRONMENT_KEY (from the Console — sk-ant-oat01-…)",
+  labelFor: (env) => `ANTHROPIC_ENVIRONMENT_KEY — Generate environment key: ${environmentKeyUrl(env[ENV_ID])}`,
+  secret: true,
+  validate: requireValue("sk-ant-oat01-"),
+};
 const SIGNING_KEY_SPEC: VarSpec = { key: SIGNING_KEY, label: "ANTHROPIC_WEBHOOK_SIGNING_KEY (Console signing secret — whsec_…)", secret: true, validate: requireValue("whsec_") };
 
 // --- flow decision (pure, unit-tested) -------------------------------------
@@ -221,23 +241,22 @@ async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<vo
   if (current) {
     const shown = spec.secret ? maskSecret(current) : current;
     console.log(`  ok ${spec.key} already set (${shown})`);
-    const overwrite = await confirm({ message: `Overwrite ${spec.key}?`, default: false });
+    const overwrite = await confirm({ message: `Overwrite ${spec.key}?`, default: false, theme: PROMPT_THEME });
     if (!overwrite) return;
   }
   const label = spec.labelFor ? spec.labelFor(env) : spec.label;
   let value: string;
   if (spec.choices) {
-    value = await select({ message: label, default: current, choices: spec.choices });
+    value = await select({ message: label, default: current, choices: spec.choices, theme: PROMPT_THEME });
   } else {
     value = (
       spec.secret
-        ? await password({ message: label, mask: "*", validate: spec.validate })
-        : await input({ message: label, validate: spec.validate })
+        ? await password({ message: label, mask: "*", validate: spec.validate, theme: PROMPT_THEME })
+        : await input({ message: label, validate: spec.validate, theme: PROMPT_THEME })
     ).trim();
   }
   appendExport(ENV_PATH, spec.key, value);
   env[spec.key] = value;
-  console.log(`    saved ${spec.key} to .env`);
 }
 
 /** Prompt for the trigger mode (webhook vs polling) and persist the choice. */
@@ -246,6 +265,7 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   const mode = await select({
     message: "TRIGGER_MODE — how the orchestrator learns about queued work",
     default: current,
+    theme: PROMPT_THEME,
     choices: [
       { name: "webhook — Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)", value: "webhook" },
       { name: "polling — orchestrator long-polls the queue (no endpoint, no secret)", value: "polling" },
@@ -326,7 +346,7 @@ async function ensureFromScript(label: string, script: string, key: string): Pro
   const out = await runScript(script);
   const value = extractValue(out, key);
   if (!value) throw new Error(`could not read ${key} from ${script} output`);
-  if (appendExport(ENV_PATH, key, value)) console.log(`   saved ${key} to .env`);
+  appendExport(ENV_PATH, key, value);
 }
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
@@ -390,10 +410,11 @@ async function main(): Promise<void> {
       continue;
     }
     if (step === "gate_env_key") {
-      gateEnvKey(env);
       if (interactive) {
         await ensureVar(env, ENV_KEY_SPEC);
         if (env[ENV_KEY]) continue;
+      } else {
+        gateEnvKey(env);
       }
       manualTail(ENV_KEY_SPEC);
       return;
