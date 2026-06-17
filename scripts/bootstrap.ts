@@ -197,7 +197,13 @@ const ENV_KEY_SPEC: VarSpec = {
   secret: true,
   validate: requireValue("sk-ant-oat01-"),
 };
-const SIGNING_KEY_SPEC: VarSpec = { key: SIGNING_KEY, label: "ANTHROPIC_WEBHOOK_SIGNING_KEY (Console signing secret — whsec_…)", secret: true, validate: requireValue("whsec_") };
+const SIGNING_KEY_SPEC: VarSpec = {
+  key: SIGNING_KEY,
+  label:
+    "ANTHROPIC_WEBHOOK_SIGNING_KEY — generate Anthropic Webhook with session.status_run_started event (https://platform.claude.com/settings/workspaces/default/webhooks)",
+  secret: true,
+  validate: requireValue("whsec_"),
+};
 
 // --- flow decision (pure, unit-tested) -------------------------------------
 
@@ -235,6 +241,50 @@ function loadEnv(): Record<string, string> {
 /** True only when we can safely block on stdin for prompts (not in CI/pipes). */
 function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+/**
+ * Run an async task behind a braille spinner that narrates `label`, then resolve
+ * the line into a green tick `✔ label` so the autonomous steps read like the
+ * already-answered prompts from the prerequisites form. The label is styled with
+ * the shared prompt theme (cyan text, white parentheticals) for visual parity.
+ *
+ * On a non-TTY (CI/pipes) there is no animation: it just prints `✔ label` once
+ * the task finishes (or `✖ label` on failure), keeping logs clean.
+ */
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T> {
+  const styled = PROMPT_THEME.style.message(label);
+  const tick = (mark: string, color: "green" | "red") => `${styleText(color, mark)} ${styled}`;
+
+  if (!process.stdout.isTTY) {
+    const result = await task();
+    console.log(tick("✔", "green"));
+    return result;
+  }
+
+  let i = 0;
+  process.stdout.write("\x1B[?25l"); // hide cursor
+  const render = () => {
+    const frame = styleText("cyan", SPINNER_FRAMES[i] as string);
+    i = (i + 1) % SPINNER_FRAMES.length;
+    process.stdout.write(`\r\x1B[2K${frame} ${styled}`);
+  };
+  render();
+  const timer = setInterval(render, 80);
+  const finish = (mark: string, color: "green" | "red") => {
+    clearInterval(timer);
+    process.stdout.write(`\r\x1B[2K${tick(mark, color)}\n\x1B[?25h`); // restore cursor
+  };
+  try {
+    const result = await task();
+    finish("✔", "green");
+    return result;
+  } catch (e) {
+    finish("✖", "red");
+    throw e;
+  }
 }
 
 /**
@@ -282,22 +332,27 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   env[TRIGGER_MODE] = mode;
 }
 
-/** Run a cookbook script via tsx, teeing its output live while capturing stdout. */
+/**
+ * Run a cookbook script via tsx, capturing stdout silently (it's parsed for the
+ * `KEY=value` line, not shown — the spinner narrates progress instead). stderr
+ * streams through live, and on a non-zero exit the captured stdout is dumped so
+ * failures stay debuggable.
+ */
 function runScript(rel: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    console.log(`\n   $ tsx ${rel}`);
     const child = spawn(TSX, [rel], { cwd: ROOT, env: process.env });
     let out = "";
     child.stdout.on("data", (d: Buffer) => {
-      const s = d.toString();
-      out += s;
-      process.stdout.write(s);
+      out += d.toString();
     });
     child.stderr.on("data", (d: Buffer) => process.stderr.write(d));
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve(out);
-      else reject(new Error(`${rel} exited with code ${code}`));
+      else {
+        if (out.trim()) process.stderr.write(out.endsWith("\n") ? out : `${out}\n`);
+        reject(new Error(`${rel} exited with code ${code}`));
+      }
     });
   });
 }
@@ -349,8 +404,7 @@ function manualTail(spec: VarSpec): void {
 }
 
 async function ensureFromScript(label: string, script: string, key: string): Promise<void> {
-  console.log(`\n-> ${label}`);
-  const out = await runScript(script);
+  const out = await withSpinner(label, () => runScript(script));
   const value = extractValue(out, key);
   if (!value) throw new Error(`could not read ${key} from ${script} output`);
   appendExport(ENV_PATH, key, value);
@@ -358,8 +412,9 @@ async function ensureFromScript(label: string, script: string, key: string): Pro
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
 async function deploy(): Promise<string | undefined> {
-  console.log("\n-> deploying the orchestrator (idempotent)");
-  const out = await runScript("scripts/deploy-orchestrator.ts");
+  const out = await withSpinner("deploying the orchestrator (idempotent)", () =>
+    runScript("scripts/deploy-orchestrator.ts"),
+  );
   return extractValue(out, "PUBLIC_WEBHOOK_URL");
 }
 
@@ -436,10 +491,13 @@ async function main(): Promise<void> {
     }
     if (step === "gate_webhook") {
       lastUrl = await deploy();
-      gateWebhook(lastUrl);
       if (interactive) {
+        // The signing-key prompt label carries the Console link + the event to
+        // subscribe to, so there's no separate ">> NEXT" block to print.
         await ensureVar(env, SIGNING_KEY_SPEC);
         if (env[SIGNING_KEY]) continue;
+      } else {
+        gateWebhook(lastUrl);
       }
       manualTail(SIGNING_KEY_SPEC);
       return;
