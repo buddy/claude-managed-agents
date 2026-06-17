@@ -48,39 +48,51 @@ const MARK_DONE = `${HOST}✔${RESET}`;
 // Fixed columns so every field lines up. Longest var name is
 // ANTHROPIC_WEBHOOK_SIGNING_KEY (29); pad to 31 for breathing room.
 const NAME_W = 31;
+const MASK_W = 12; // `········` + up to 4 trailing chars, padded so tags align
 const MARK_INDENT = "   "; // 3 spaces before the glyph
-const VALUE_COL = MARK_INDENT.length + 3 + NAME_W; // 3 + (glyph + 2 spaces) + NAME_W
+const HINT_INDENT = 9; // spaces before the ↳ glyph
+const HINT_BODY = HINT_INDENT + 2; // text column, just past "↳ "
+const RULE_W = 63; // width of banner / section rules
 
-/**
- * Style a prompt label: variable name / prose in HOST (dim cyan), any
- * parenthetical aside (URLs, hints) in DIM.
- */
-function styleMessage(text: string): string {
-  return text.replace(/(\([^)]*\))|([^(]+)/g, (_m, paren, rest) =>
-    paren ? `${DIM}${paren}${RESET}` : `${HOST}${rest}${RESET}`,
-  );
+/** Strip the protocol so links read tighter in hints. */
+function shortUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "");
 }
 
-/** Shared inquirer theme: » prefix (white), label in HOST, entered value white. */
+/** Inquirer theme: label in HOST, parenthetical asides in DIM, value white. */
 const PROMPT_THEME = {
   prefix: MARK_USER,
-  style: { message: styleMessage, answer: (text: string) => `${WHITE}${text}${RESET}` },
+  style: {
+    message: (text: string) =>
+      text.replace(/(\([^)]*\))|([^(]+)/g, (_m, paren, rest) =>
+        paren ? `${DIM}${paren}${RESET}` : `${HOST}${rest}${RESET}`,
+      ),
+    answer: (text: string) => `${WHITE}${text}${RESET}`,
+  },
 };
+/** On submit, fully erase the live prompt — the polished field() line replaces it. */
+const ERASE_ON_DONE = { clearPromptOnDone: true } as const;
 
-/** Secrets render as a fixed mask on submit — never the real length. */
-const SECRET_THEME = {
-  ...PROMPT_THEME,
-  style: { ...PROMPT_THEME.style, answer: () => `${DIM}········${RESET}` },
-};
+/** A hint line under a field: a bare note/link, or an aligned `label  value` pair. */
+type Hint = string | { label: string; value: string };
 
-/** Wrap a hint to the terminal width on spaces only (never mid-token, e.g. URLs). */
-function wrapHint(text: string, indentWidth: number): string[] {
-  const width = (process.stdout.columns || 80) - indentWidth - 2; // minus "↳ "
-  if (width <= 0 || text.length <= width) return [text];
+/** Greedy word-wrap; hard-breaks a single token longer than the column (e.g. a URL). */
+function wrap(text: string, width: number): string[] {
+  if (width < 8) return [text];
   const out: string[] = [];
   let cur = "";
-  for (const word of text.split(" ")) {
-    if (cur && cur.length + 1 + word.length > width) {
+  for (let word of text.split(" ")) {
+    if (word.length > width) {
+      if (cur) {
+        out.push(cur);
+        cur = "";
+      }
+      while (word.length > width) {
+        out.push(word.slice(0, width));
+        word = word.slice(width);
+      }
+      cur = word;
+    } else if (cur && cur.length + 1 + word.length > width) {
       out.push(cur);
       cur = word;
     } else {
@@ -91,41 +103,74 @@ function wrapHint(text: string, indentWidth: number): string[] {
   return out;
 }
 
+/** Render the ↳ hint lines under a field. Bare hints come first, then aligned pairs. */
+function renderHints(hints: Hint[]): string[] {
+  const cols = process.stdout.columns || 80;
+  const labelW = Math.max(0, ...hints.map((h) => (typeof h === "string" ? 0 : h.label.length)));
+  const out: string[] = [];
+  for (const hint of hints) {
+    if (typeof hint === "string") {
+      wrap(hint, cols - HINT_BODY).forEach((seg, i) =>
+        out.push(`${" ".repeat(HINT_INDENT)}${DIM}${i === 0 ? "↳ " : "  "}${seg}${RESET}`),
+      );
+    } else {
+      const valueCol = HINT_BODY + labelW + 2;
+      wrap(hint.value, cols - valueCol).forEach((seg, i) =>
+        out.push(
+          i === 0
+            ? `${" ".repeat(HINT_INDENT)}${DIM}↳ ${hint.label.padEnd(labelW)}  ${seg}${RESET}`
+            : `${" ".repeat(valueCol)}${DIM}${seg}${RESET}`,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 interface FieldOpts {
   secret?: boolean; // mask the value
   last4?: string; // trailing chars to confirm a secret's identity
   done?: boolean; // ✔ (script produced it) vs » (you supplied it)
-  hints?: string[]; // ↳ lines rendered under the value
+  note?: string; // dim aside after the name on a value-less ✔ step
+  tags?: string[]; // dim tags after the value, joined with " · "
+  hints?: Hint[]; // ↳ lines rendered under the field
 }
 
-/** Render one form field: `  ⟪marker⟫  NAME            value   ⟪tags⟫` + hint lines. */
+/** Render one form field plus its hint lines. */
 function field(name: string, value: string, opts: FieldOpts = {}): void {
   const glyph = opts.done ? MARK_DONE : MARK_USER;
-  const namePad = name.length >= NAME_W ? `${name} ` : name.padEnd(NAME_W);
-  const valuePart = opts.secret
-    ? `${DIM}········${opts.last4 ?? ""}${RESET}`
-    : `${WHITE}${value}${RESET}`;
-  const tag = opts.secret ? `   ${DIM}secret${RESET}` : "";
-  const lines = [`${MARK_INDENT}${glyph}  ${HOST}${namePad}${RESET}${valuePart}${tag}`];
-  const cont = " ".repeat(VALUE_COL);
-  for (const hint of opts.hints ?? []) {
-    wrapHint(hint, VALUE_COL).forEach((seg, i) => {
-      lines.push(`${cont}${DIM}${i === 0 ? "↳ " : "  "}${seg}${RESET}`);
-    });
+  const head = `${MARK_INDENT}${glyph}  `;
+  let line: string;
+  if (opts.done && !value && !opts.secret) {
+    // Value-less step, e.g. `✔  deploy orchestrator  (idempotent)`.
+    const note = opts.note ? `  ${DIM}${opts.note}${RESET}` : "";
+    line = `${head}${HOST}${name}${RESET}${note}`;
+  } else {
+    const namePad = name.length >= NAME_W ? `${name} ` : name.padEnd(NAME_W);
+    const tags = [...(opts.secret ? ["secret"] : []), ...(opts.tags ?? [])];
+    const tagStr = tags.length ? `   ${DIM}${tags.join(" · ")}${RESET}` : "";
+    let valueStr: string;
+    if (opts.secret) {
+      const body = `········${opts.last4 ?? ""}`;
+      valueStr = `${DIM}${body}${RESET}${" ".repeat(Math.max(0, MASK_W - body.length))}`;
+    } else {
+      valueStr = `${WHITE}${value}${RESET}`;
+    }
+    line = `${head}${HOST}${namePad}${RESET}${valueStr}${tagStr}`;
   }
-  console.log(lines.join("\n"));
+  console.log([line, ...renderHints(opts.hints ?? [])].join("\n"));
 }
 
 /** A dashed section header, e.g. `┄┄ Credentials ┄┄┄┄┄…`. */
 function sectionHeader(title: string): void {
   const left = `┄┄ ${title} `;
-  const fill = "┄".repeat(Math.max(3, 56 - left.length));
-  console.log(`\n${HOST}${left}${fill}${RESET}`);
+  console.log(`\n${HOST}${left}${"┄".repeat(Math.max(3, RULE_W - left.length))}${RESET}`);
 }
 
 /** Banner, printed once at the very top. */
 function banner(): void {
-  console.log(`\n${HOST}CREATING ANTHROPIC SELF-HOSTED AGENT${RESET}`);
+  const left = "═══ cma-buddy-sandboxes · bootstrap ";
+  console.log(`\n${HOST}${left}${"═".repeat(Math.max(3, RULE_W - left.length))}${RESET}`);
 }
 
 /** Closing summary once everything is wired up. */
@@ -222,6 +267,10 @@ export interface VarSpec {
   labelFor?: (env: Record<string, string>) => string;
   /** Returns true if valid, or an error message string. */
   validate?: (value: string) => true | string;
+  /** Extra dim tags after the value (e.g. a required scope). */
+  tags?: string[];
+  /** ↳ hint lines under the field; the `Open:` link comes first, then params. */
+  hintsFor?: (env: Record<string, string>) => Hint[];
 }
 
 /** Buddy security/PAT page per region (BUDDY_REGION value → URL). */
@@ -251,7 +300,13 @@ export function maskSecret(value: string): string {
 
 /** Things the user must supply before any resource can be created. */
 const PREREQS: VarSpec[] = [
-  { key: API_KEY, label: "ANTHROPIC_API_KEY (https://platform.claude.com/settings/keys)", secret: true, validate: requireValue("sk-ant-api03-") },
+  {
+    key: API_KEY,
+    label: "ANTHROPIC_API_KEY (https://platform.claude.com/settings/keys)",
+    secret: true,
+    validate: requireValue("sk-ant-api03-"),
+    hintsFor: () => ["Open: platform.claude.com/settings/keys"],
+  },
   {
     key: BUDDY_REGION,
     label: "BUDDY_REGION — Buddy region for sandboxes",
@@ -267,6 +322,8 @@ const PREREQS: VarSpec[] = [
     labelFor: (env) => `BUDDY_TOKEN — generate Buddy personal access token with SANDBOX_MANAGE scope (${buddySecurityUrl(env[BUDDY_REGION])})`,
     secret: true,
     validate: requireValue(),
+    tags: ["scope SANDBOX_MANAGE"],
+    hintsFor: (env) => [`Open: ${shortUrl(buddySecurityUrl(env[BUDDY_REGION]))}`],
   },
   { key: BUDDY_WORKSPACE, label: "BUDDY_WORKSPACE (workspace domain)", validate: requireValue() },
   { key: BUDDY_PROJECT, label: "BUDDY_PROJECT (project name)", validate: requireValue() },
@@ -277,12 +334,18 @@ export function environmentKeyUrl(envId: string | undefined): string {
   return `https://platform.claude.com/workspaces/default/environments/${envId ?? ""}`;
 }
 
+const WEBHOOK_SETTINGS_URL = "https://platform.claude.com/settings/workspaces/default/webhooks";
+
 const ENV_KEY_SPEC: VarSpec = {
   key: ENV_KEY,
   label: "ANTHROPIC_ENVIRONMENT_KEY (from the Console — sk-ant-oat01-…)",
   labelFor: (env) => `ANTHROPIC_ENVIRONMENT_KEY — Generate Environment key (${environmentKeyUrl(env[ENV_ID])})`,
   secret: true,
   validate: requireValue("sk-ant-oat01-"),
+  hintsFor: (env) => [
+    "Open: platform.claude.com/workspaces/default/environments/…",
+    { label: "tied to", value: env[ENV_ID] ?? "" },
+  ],
 };
 const WEBHOOK_URL = "PUBLIC_WEBHOOK_URL";
 
@@ -292,10 +355,15 @@ const SIGNING_KEY_SPEC: VarSpec = {
     "ANTHROPIC_WEBHOOK_SIGNING_KEY — generate Anthropic Webhook with session.status_run_started event (https://platform.claude.com/settings/workspaces/default/webhooks)",
   labelFor: (env) => {
     const endpoint = env[WEBHOOK_URL] ? ` pointing at ${env[WEBHOOK_URL]}` : "";
-    return `ANTHROPIC_WEBHOOK_SIGNING_KEY — generate Anthropic Webhook${endpoint} subscribed to the session.status_run_started event (https://platform.claude.com/settings/workspaces/default/webhooks)`;
+    return `ANTHROPIC_WEBHOOK_SIGNING_KEY — generate Anthropic Webhook${endpoint} subscribed to the session.status_run_started event (${WEBHOOK_SETTINGS_URL})`;
   },
   secret: true,
   validate: requireValue("whsec_"),
+  hintsFor: (env) => [
+    `Open: ${shortUrl(WEBHOOK_SETTINGS_URL)}`,
+    ...(env[WEBHOOK_URL] ? [{ label: "endpoint", value: env[WEBHOOK_URL] } as Hint] : []),
+    { label: "event", value: "session.status_run_started" },
+  ],
 };
 
 // --- flow decision (pure, unit-tested) -------------------------------------
@@ -374,44 +442,66 @@ async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T>
  * the passed-in `env` so the caller sees them without a reload.
  */
 async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<void> {
+  const render = (value: string) =>
+    field(spec.key, value, {
+      secret: spec.secret,
+      last4: spec.secret ? value.slice(-4) : undefined,
+      tags: spec.tags,
+      hints: spec.hintsFor?.(env),
+    });
+
   const current = env[spec.key];
   if (current) {
-    field(spec.key, current, {
-      secret: spec.secret,
-      last4: spec.secret ? current.slice(-4) : undefined,
-    });
-    const overwrite = await confirm({ message: `Overwrite ${spec.key}?`, default: false, theme: PROMPT_THEME });
-    if (!overwrite) return;
+    // Confirm before the field renders, so a "keep" leaves exactly one line.
+    const shown = spec.secret ? `…${current.slice(-4)}` : current;
+    const overwrite = await confirm(
+      { message: `${spec.key} is set (${shown}) — overwrite?`, default: false, theme: PROMPT_THEME },
+      ERASE_ON_DONE,
+    );
+    if (!overwrite) {
+      render(current);
+      return;
+    }
   }
+
   const label = spec.labelFor ? spec.labelFor(env) : spec.label;
   let value: string;
   if (spec.choices) {
-    value = await select({ message: label, default: current, choices: spec.choices, theme: PROMPT_THEME });
+    value = await select({ message: label, default: current, choices: spec.choices, theme: PROMPT_THEME }, ERASE_ON_DONE);
   } else {
     value = (
       spec.secret
-        ? await password({ message: label, mask: "•", validate: spec.validate, theme: SECRET_THEME })
-        : await input({ message: label, validate: spec.validate, theme: PROMPT_THEME })
+        ? await password({ message: label, mask: "•", validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
+        : await input({ message: label, validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
     ).trim();
   }
   appendExport(ENV_PATH, spec.key, value);
   env[spec.key] = value;
+  render(value);
 }
 
 /** Prompt for the trigger mode (webhook vs polling) and persist the choice. */
 async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   const current = isPollingMode(env) ? "polling" : "webhook";
-  const mode = await select({
-    message: "TRIGGER_MODE — how the orchestrator learns about queued work",
-    default: current,
-    theme: PROMPT_THEME,
-    choices: [
-      { name: "webhook — Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)", value: "webhook" },
-      { name: "polling — orchestrator long-polls the queue (no endpoint, no secret)", value: "polling" },
-    ],
-  });
+  const descriptions: Record<string, string> = {
+    webhook: "Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)",
+    polling: "orchestrator long-polls the queue (no endpoint, no secret)",
+  };
+  const mode = await select(
+    {
+      message: "TRIGGER_MODE — how the orchestrator learns about queued work",
+      default: current,
+      theme: PROMPT_THEME,
+      choices: [
+        { name: `webhook — ${descriptions.webhook}`, value: "webhook" },
+        { name: `polling — ${descriptions.polling}`, value: "polling" },
+      ],
+    },
+    ERASE_ON_DONE,
+  );
   appendExport(ENV_PATH, TRIGGER_MODE, mode);
   env[TRIGGER_MODE] = mode;
+  field(TRIGGER_MODE, mode, { hints: [descriptions[mode] as string] });
 }
 
 /**
@@ -490,7 +580,7 @@ async function ensureFromScript(label: string, name: string, script: string, key
   const value = extractValue(out, key);
   if (!value) throw new Error(`could not read ${key} from ${script} output`);
   appendExport(ENV_PATH, key, value);
-  field(name, value, { done: true });
+  field(name, "", { done: true });
 }
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
@@ -498,9 +588,8 @@ async function deploy(): Promise<string | undefined> {
   const out = await withSpinner("deploying the orchestrator", () =>
     runScript("scripts/deploy-orchestrator.ts"),
   );
-  const url = extractValue(out, "PUBLIC_WEBHOOK_URL");
-  field("deploy orchestrator", "ready", { done: true, hints: url ? [url] : [] });
-  return url;
+  field("deploy orchestrator", "", { done: true, note: "(idempotent)" });
+  return extractValue(out, "PUBLIC_WEBHOOK_URL");
 }
 
 function planLabel(step: Step): string {
@@ -529,10 +618,12 @@ async function main(): Promise<void> {
   // (confirming before overwriting anything already in .env); non-interactively
   // (CI/pipes) just fail fast if something is missing rather than hanging.
   if (interactive) {
-    if (seedEnvFromExample(ENV_PATH, ENV_EXAMPLE_PATH)) {
-      console.log(`\n${DIM}created .env from .env.example${RESET}`);
-    }
     banner();
+    console.log();
+    if (seedEnvFromExample(ENV_PATH, ENV_EXAMPLE_PATH)) {
+      console.log("Created .env from .env.example.");
+    }
+    console.log(`${DIM}Ctrl+C to abort · existing values are confirmed before overwrite.${RESET}`);
     sectionHeader("Credentials");
     const env0 = loadEnv();
     for (const spec of PREREQS) await ensureVar(env0, spec);
