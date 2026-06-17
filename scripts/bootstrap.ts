@@ -131,34 +131,37 @@ interface FieldOpts {
   secret?: boolean; // mask the value
   last4?: string; // trailing chars to confirm a secret's identity
   done?: boolean; // ✔ (script produced it) vs » (you supplied it)
+  pending?: boolean; // name only — value is still being prompted for
   note?: string; // dim aside after the name on a value-less ✔ step
   tags?: string[]; // dim tags after the value, joined with " · "
   hints?: Hint[]; // ↳ lines rendered under the field
 }
 
-/** Render one form field plus its hint lines. */
-function field(name: string, value: string, opts: FieldOpts = {}): void {
-  const glyph = opts.done ? MARK_DONE : MARK_USER;
-  const head = `${MARK_INDENT}${glyph}  `;
-  let line: string;
+/** Render just the single `marker NAME value tags` line (no hints). */
+function fieldLine(name: string, value: string, opts: FieldOpts = {}): string {
+  const head = `${MARK_INDENT}${opts.done ? MARK_DONE : MARK_USER}  `;
   if (opts.done && !value && !opts.secret) {
     // Value-less step, e.g. `✔  deploy orchestrator  (idempotent)`.
     const note = opts.note ? `  ${DIM}${opts.note}${RESET}` : "";
-    line = `${head}${HOST}${name}${RESET}${note}`;
-  } else {
-    const namePad = name.length >= NAME_W ? `${name} ` : name.padEnd(NAME_W);
-    const tags = [...(opts.secret ? ["secret"] : []), ...(opts.tags ?? [])];
-    const tagStr = tags.length ? `   ${DIM}${tags.join(" · ")}${RESET}` : "";
-    let valueStr: string;
-    if (opts.secret) {
-      const body = `········${opts.last4 ?? ""}`;
-      valueStr = `${DIM}${body}${RESET}${" ".repeat(Math.max(0, MASK_W - body.length))}`;
-    } else {
-      valueStr = `${WHITE}${value}${RESET}`;
-    }
-    line = `${head}${HOST}${namePad}${RESET}${valueStr}${tagStr}`;
+    return `${head}${HOST}${name}${RESET}${note}`;
   }
-  console.log([line, ...renderHints(opts.hints ?? [])].join("\n"));
+  if (opts.pending) return `${head}${HOST}${name}${RESET}`; // name only, value still to come
+  const namePad = name.length >= NAME_W ? `${name} ` : name.padEnd(NAME_W);
+  const tags = [...(opts.secret ? ["secret"] : []), ...(opts.tags ?? [])];
+  const tagStr = tags.length ? `   ${DIM}${tags.join(" · ")}${RESET}` : "";
+  let valueStr: string;
+  if (opts.secret) {
+    const body = `········${opts.last4 ?? ""}`;
+    valueStr = `${DIM}${body}${RESET}${" ".repeat(Math.max(0, MASK_W - body.length))}`;
+  } else {
+    valueStr = `${WHITE}${value}${RESET}`;
+  }
+  return `${head}${HOST}${namePad}${RESET}${valueStr}${tagStr}`;
+}
+
+/** Render one form field plus its hint lines. */
+function field(name: string, value: string, opts: FieldOpts = {}): void {
+  console.log([fieldLine(name, value, opts), ...renderHints(opts.hints ?? [])].join("\n"));
 }
 
 /** A dashed section header, e.g. `┄┄ Credentials ┄┄┄┄┄…`. */
@@ -322,8 +325,7 @@ const PREREQS: VarSpec[] = [
     labelFor: (env) => `BUDDY_TOKEN — generate Buddy personal access token with SANDBOX_MANAGE scope (${buddySecurityUrl(env[BUDDY_REGION])})`,
     secret: true,
     validate: requireValue(),
-    tags: ["scope SANDBOX_MANAGE"],
-    hintsFor: (env) => [`Open: ${shortUrl(buddySecurityUrl(env[BUDDY_REGION]))}`],
+    hintsFor: (env) => [`Open: ${shortUrl(buddySecurityUrl(env[BUDDY_REGION]))}`, "Scope: SANDBOX_MANAGE"],
   },
   { key: BUDDY_WORKSPACE, label: "BUDDY_WORKSPACE (workspace domain)", validate: requireValue() },
   { key: BUDDY_PROJECT, label: "BUDDY_PROJECT (project name)", validate: requireValue() },
@@ -441,43 +443,62 @@ async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T>
  * overwrite, defaulting to NO. New values are appended to .env and reflected in
  * the passed-in `env` so the caller sees them without a reload.
  */
-async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<void> {
-  const render = (value: string) =>
-    field(spec.key, value, {
-      secret: spec.secret,
-      last4: spec.secret ? value.slice(-4) : undefined,
-      tags: spec.tags,
-      hints: spec.hintsFor?.(env),
-    });
+/**
+ * Print the field header (name) with its hints expanded *first*, then prompt for
+ * the value on the line below. On submit the live prompt is erased and the value
+ * is dropped into the header line in place — so you read the `Open:`/`Scope:`
+ * hints before typing, and the finished field is `»  NAME  value` with its hints
+ * already beneath it. Returns the entered value.
+ */
+async function promptInPlace(env: Record<string, string>, spec: VarSpec, current?: string): Promise<string> {
+  const hintLines = renderHints(spec.hintsFor?.(env) ?? []);
+  console.log([fieldLine(spec.key, "", { pending: true }), ...hintLines].join("\n"));
 
+  const message = spec.key;
+  let value: string;
+  if (spec.choices) {
+    value = await select({ message, default: current, choices: spec.choices, theme: PROMPT_THEME }, ERASE_ON_DONE);
+  } else {
+    value = (
+      spec.secret
+        ? await password({ message, mask: "•", validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
+        : await input({ message, validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
+    ).trim();
+  }
+
+  const finished = fieldLine(spec.key, value, {
+    secret: spec.secret,
+    last4: spec.secret ? value.slice(-4) : undefined,
+    tags: spec.tags,
+  });
+  const up = hintLines.length + 1; // rows from the (erased) prompt back to the header
+  if (process.stdout.isTTY) process.stdout.write(`\x1B[${up}A\r\x1B[2K${finished}\x1B[${up}B\r`);
+  else console.log(finished);
+  return value;
+}
+
+async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<void> {
   const current = env[spec.key];
   if (current) {
-    // Confirm before the field renders, so a "keep" leaves exactly one line.
+    // Confirm (and erase) before any field renders, so "keep" leaves one block.
     const shown = spec.secret ? `…${current.slice(-4)}` : current;
     const overwrite = await confirm(
       { message: `${spec.key} is set (${shown}) — overwrite?`, default: false, theme: PROMPT_THEME },
       ERASE_ON_DONE,
     );
     if (!overwrite) {
-      render(current);
+      field(spec.key, current, {
+        secret: spec.secret,
+        last4: spec.secret ? current.slice(-4) : undefined,
+        tags: spec.tags,
+        hints: spec.hintsFor?.(env),
+      });
       return;
     }
   }
-
-  const label = spec.labelFor ? spec.labelFor(env) : spec.label;
-  let value: string;
-  if (spec.choices) {
-    value = await select({ message: label, default: current, choices: spec.choices, theme: PROMPT_THEME }, ERASE_ON_DONE);
-  } else {
-    value = (
-      spec.secret
-        ? await password({ message: label, mask: "•", validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
-        : await input({ message: label, validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
-    ).trim();
-  }
+  const value = await promptInPlace(env, spec, current);
   appendExport(ENV_PATH, spec.key, value);
   env[spec.key] = value;
-  render(value);
 }
 
 /** Prompt for the trigger mode (webhook vs polling) and persist the choice. */
@@ -487,6 +508,7 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
     webhook: "Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)",
     polling: "orchestrator long-polls the queue (no endpoint, no secret)",
   };
+  console.log(fieldLine(TRIGGER_MODE, "", { pending: true }));
   const mode = await select(
     {
       message: "TRIGGER_MODE — how the orchestrator learns about queued work",
@@ -501,7 +523,11 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   );
   appendExport(ENV_PATH, TRIGGER_MODE, mode);
   env[TRIGGER_MODE] = mode;
-  field(TRIGGER_MODE, mode, { hints: [descriptions[mode] as string] });
+  // The chosen mode's description isn't known until now, so it renders after.
+  const finished = fieldLine(TRIGGER_MODE, mode);
+  if (process.stdout.isTTY) process.stdout.write(`\x1B[1A\r\x1B[2K${finished}\n`);
+  else console.log(finished);
+  console.log(renderHints([descriptions[mode] as string]).join("\n"));
 }
 
 /**
