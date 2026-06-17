@@ -21,6 +21,7 @@ import { requireAgentId, requireEnvironmentId } from "../src/config.js";
 import { errLabel, sleep } from "../src/util.js";
 
 const TURN_TIMEOUT_MS = 180_000;
+const DEBUG = !!process.env.DEBUG; // DEBUG=1 npm run session -> logs every event
 
 interface StreamEvent {
   type?: string;
@@ -55,8 +56,12 @@ async function main(): Promise<void> {
   // Background reader: a single pass over the whole session stream.
   const reader = (async () => {
     for await (const raw of stream as AsyncIterable<StreamEvent>) {
-      if (!awaiting) continue; // ignore startup replay and between-turn chatter
       const type = raw.type ?? "";
+      if (DEBUG) {
+        const textLen = (raw.content ?? []).reduce((n, b) => n + (b.text?.length ?? 0), 0);
+        console.log(`[ev]${awaiting ? "" : " (ignored)"} ${type}${textLen ? ` text=${textLen}` : ""}`);
+      }
+      if (!awaiting) continue; // ignore startup replay and between-turn chatter
 
       if (type === "session.status_running" || type.startsWith("agent.")) sawActivity = true;
 
