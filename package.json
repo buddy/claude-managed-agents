@@ -21,7 +21,7 @@
     "set-webhook": "tsx scripts/set-webhook.ts",
     "orchestrator-logs": "tsx scripts/orchestrator-logs.ts",
     "teardown": "tsx scripts/teardown.ts",
-    "run-session": "tsx example/run-session.ts"
+    "session": "tsx example/run-session.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz",

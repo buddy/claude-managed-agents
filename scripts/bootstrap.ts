@@ -167,7 +167,7 @@ function valueHintLine(cue: string, value: string, secret: boolean): string {
 
 /** The input cue shown as the field's last ↳ line. */
 function cueFor(spec: VarSpec): string {
-  return spec.choices ? "Choose:" : spec.secret ? "Paste key:" : "Enter value:";
+  return spec.cue ?? (spec.choices ? "Choose:" : spec.secret ? "Paste key:" : "Enter value:");
 }
 
 /** Render a field: its header line plus any ↳ hint lines. */
@@ -189,8 +189,8 @@ function banner(): void {
 
 /** Closing summary once everything is wired up. */
 function footer(): void {
-  console.log(`\n${HOST}✓${RESET} Setup complete.`);
-  console.log(`  ${DIM}→${RESET} ${WHITE}npm run run-session${RESET}     to prove it end-to-end.`);
+  console.log();
+  field("Setup complete", { done: true, hints: [{ label: "Run session to test it:", value: "npm run session" }] });
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -283,6 +283,8 @@ export interface VarSpec {
   validate?: (value: string) => true | string;
   /** ↳ hint lines under the field; the `Open:` link comes first, then params. */
   hintsFor?: (env: Record<string, string>) => Hint[];
+  /** Override the input cue (the field's last ↳ line), e.g. "Paste signing secret:". */
+  cue?: string;
 }
 
 /** Buddy "add personal access token" page per region (BUDDY_REGION value → URL). */
@@ -367,10 +369,11 @@ const SIGNING_KEY_SPEC: VarSpec = {
   },
   secret: true,
   validate: requireValue("whsec_"),
+  cue: "Paste signing secret:",
   hintsFor: (env) => [
     `Open: ${shortUrl(WEBHOOK_SETTINGS_URL)}`,
-    ...(env[WEBHOOK_URL] ? [{ label: "endpoint", value: env[WEBHOOK_URL] } as Hint] : []),
-    { label: "event", value: "session.status_run_started" },
+    ...(env[WEBHOOK_URL] ? [{ label: "Endpoint:", value: env[WEBHOOK_URL] } as Hint] : []),
+    { label: "Event:", value: "session.status_run_started" },
   ],
 };
 
@@ -596,10 +599,10 @@ async function ensureFromScript(label: string, name: string, script: string, key
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
 async function deploy(): Promise<string | undefined> {
-  const out = await withSpinner("deploying the orchestrator", () =>
+  const out = await withSpinner("Deploying the orchestrator", () =>
     runScript("scripts/deploy-orchestrator.ts"),
   );
-  field("deploy orchestrator", { done: true, note: "(idempotent)" });
+  field("Deploy orchestrator", { done: true, note: "(idempotent)" });
   return extractValue(out, "PUBLIC_WEBHOOK_URL");
 }
 
@@ -661,7 +664,7 @@ async function main(): Promise<void> {
     if (!interactive) printState(env);
 
     if (step === "create_env") {
-      await ensureFromScript("creating the self-hosted environment", "Claude self-hosted environment", "scripts/create-environment.ts", ENV_ID);
+      await ensureFromScript("Creating the self-hosted environment", "Claude self-hosted environment", "scripts/create-environment.ts", ENV_ID);
       continue;
     }
     if (step === "gate_env_key") {
@@ -675,8 +678,8 @@ async function main(): Promise<void> {
       return;
     }
     if (step === "provision") {
-      if (!env[AGENT_ID]) await ensureFromScript("creating the agent", "Claude agent", "scripts/create-agent.ts", AGENT_ID);
-      if (!env[SNAPSHOT_ID]) await ensureFromScript("building the base snapshot", "base snapshot", "scripts/build-snapshot.ts", SNAPSHOT_ID);
+      if (!env[AGENT_ID]) await ensureFromScript("Creating the agent", "Claude agent", "scripts/create-agent.ts", AGENT_ID);
+      if (!env[SNAPSHOT_ID]) await ensureFromScript("Building the base snapshot", "Base snapshot", "scripts/build-snapshot.ts", SNAPSHOT_ID);
       continue;
     }
     if (step === "gate_webhook") {

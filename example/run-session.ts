@@ -7,7 +7,7 @@
  *
  * Requires a deployed + webhook-registered orchestrator (it does the dispatch).
  *
- *   npm run run-session
+ *   npm run session
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { Sandbox } from "@buddy-works/sandbox-sdk";

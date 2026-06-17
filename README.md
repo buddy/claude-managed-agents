@@ -79,11 +79,11 @@ npm run bootstrap          # creates environment → stops: generate the env key
 npm run bootstrap          # creates agent + base snapshot, deploys → stops: register the webhook
 #   paste ANTHROPIC_WEBHOOK_SIGNING_KEY into .env
 npm run bootstrap          # re-deploys to pick up the key — done
-npm run run-session        # prove it end to end
+npm run session        # prove it end to end
 ```
 
 `npm run bootstrap -- --plan` shows the current state and the next action without
-running anything. `run-session` prints `EXAMPLE: PASS` when the transcript
+running anything. `session` prints `EXAMPLE: PASS` when the transcript
 completes **and** the session's `cma-worker-*` sandbox ran `ant beta:worker run`.
 
 The two Console steps are unavoidable — generating an environment key and
@@ -98,7 +98,7 @@ entirely — there is no webhook to register and no signing key to paste, so
 npm run bootstrap          # creates environment → stops: generate the env key in the Console
 #   paste ANTHROPIC_ENVIRONMENT_KEY into .env
 npm run bootstrap          # creates agent + snapshot, deploys in polling mode — done
-npm run run-session        # prove it end to end
+npm run session        # prove it end to end
 ```
 
 ### Manual steps (what bootstrap automates)
@@ -109,7 +109,7 @@ npm run create-agent         # → add ANTHROPIC_AGENT_ID to .env
 npm run build-snapshot       # → add BUDDY_BASE_SNAPSHOT_ID to .env
 npm run deploy-orchestrator  # prints the public webhook URL
 npm run set-webhook          # prints the URL + Console steps; then redeploy after adding the signing key
-npm run run-session
+npm run session
 ```
 
 ## Tests
