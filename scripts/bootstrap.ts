@@ -45,14 +45,14 @@ const RESET = COLOR ? "\x1b[0m" : "";
 const MARK_USER = `${WHITE}»${RESET}`;
 const MARK_DONE = `${HOST}✔${RESET}`;
 
-// Fixed columns so every field lines up. Longest var name is
-// ANTHROPIC_WEBHOOK_SIGNING_KEY (29); pad to 31 for breathing room.
-const NAME_W = 31;
-const MASK_W = 12; // `········` + up to 4 trailing chars, padded so tags align
-const MARK_INDENT = "   "; // 3 spaces before the glyph
 const HINT_INDENT = 9; // spaces before the ↳ glyph
 const HINT_BODY = HINT_INDENT + 2; // text column, just past "↳ "
 const RULE_W = 63; // width of banner / section rules
+
+/** Mask a secret for display: fixed dots + the last 4 chars to confirm identity. */
+function maskValue(value: string): string {
+  return `········${value.slice(-4)}`;
+}
 
 /** Strip the protocol so links read tighter in hints. */
 function shortUrl(url: string): string {
@@ -140,40 +140,31 @@ function renderHints(hints: Hint[]): string[] {
 }
 
 interface FieldOpts {
-  secret?: boolean; // mask the value
-  last4?: string; // trailing chars to confirm a secret's identity
   done?: boolean; // ✔ (script produced it) vs » (you supplied it)
-  pending?: boolean; // name only — value is still being prompted for
-  note?: string; // dim aside after the name on a value-less ✔ step
-  tags?: string[]; // dim tags after the value, joined with " · "
+  note?: string; // dim aside after the name, e.g. on a value-less ✔ step
   hints?: Hint[]; // ↳ lines rendered under the field
 }
 
-/** Render just the single `marker NAME value tags` line (no hints). */
-function fieldLine(name: string, value: string, opts: FieldOpts = {}): string {
-  const head = `${MARK_INDENT}${opts.done ? MARK_DONE : MARK_USER}  `;
-  if (opts.done && !value && !opts.secret) {
-    // Value-less step, e.g. `✔  deploy orchestrator  (idempotent)`.
-    const note = opts.note ? `  ${DIM}${opts.note}${RESET}` : "";
-    return `${head}${HOST}${name}${RESET}${note}`;
-  }
-  if (opts.pending) return `${head}${HOST}${name}${RESET}`; // name only, value still to come
-  const namePad = name.length >= NAME_W ? `${name} ` : name.padEnd(NAME_W);
-  const tags = [...(opts.secret ? ["secret"] : []), ...(opts.tags ?? [])];
-  const tagStr = tags.length ? `   ${DIM}${tags.join(" · ")}${RESET}` : "";
-  let valueStr: string;
-  if (opts.secret) {
-    const body = `········${opts.last4 ?? ""}`;
-    valueStr = `${DIM}${body}${RESET}${" ".repeat(Math.max(0, MASK_W - body.length))}`;
-  } else {
-    valueStr = `${WHITE}${value}${RESET}`;
-  }
-  return `${head}${HOST}${namePad}${RESET}${valueStr}${tagStr}`;
+/** The header line for a field: `»  NAME` (you supply) or `✔  NAME` (script did). */
+function headerLine(name: string, opts: { done?: boolean; note?: string } = {}): string {
+  const glyph = opts.done ? MARK_DONE : MARK_USER;
+  const note = opts.note ? `  ${DIM}${opts.note}${RESET}` : "";
+  return `${glyph}  ${HOST}${name}${RESET}${note}`;
 }
 
-/** Render one form field plus its hint lines. */
-function field(name: string, value: string, opts: FieldOpts = {}): void {
-  console.log([fieldLine(name, value, opts), ...renderHints(opts.hints ?? [])].join("\n"));
+/** A `↳ <cue> <value>` line — the entered value (masked for secrets) under its prompt. */
+function valueHintLine(cue: string, value: string, secret: boolean): string {
+  return `${" ".repeat(HINT_INDENT)}${DIM}↳ ${cue} ${WHITE}${secret ? maskValue(value) : value}${RESET}`;
+}
+
+/** The input cue shown as the field's last ↳ line. */
+function cueFor(spec: VarSpec): string {
+  return spec.choices ? "Choose:" : spec.secret ? "Paste key:" : "Enter value:";
+}
+
+/** Render a field: its header line plus any ↳ hint lines. */
+function field(name: string, opts: FieldOpts = {}): void {
+  console.log([headerLine(name, opts), ...renderHints(opts.hints ?? [])].join("\n"));
 }
 
 /** A dashed section header, e.g. `┄┄ Credentials ┄┄┄┄┄…`. */
@@ -282,8 +273,6 @@ export interface VarSpec {
   labelFor?: (env: Record<string, string>) => string;
   /** Returns true if valid, or an error message string. */
   validate?: (value: string) => true | string;
-  /** Extra dim tags after the value (e.g. a required scope). */
-  tags?: string[];
   /** ↳ hint lines under the field; the `Open:` link comes first, then params. */
   hintsFor?: (env: Record<string, string>) => Hint[];
 }
@@ -434,7 +423,7 @@ async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T>
   const render = () => {
     const frame = SPINNER_FRAMES[i] as string;
     i = (i + 1) % SPINNER_FRAMES.length;
-    process.stdout.write(`\r\x1B[2K${MARK_INDENT}${HOST}${frame}  ${DIM}${label}…${RESET}`);
+    process.stdout.write(`\r\x1B[2K${HOST}${frame}  ${DIM}${label}…${RESET}`);
   };
   render();
   const timer = setInterval(render, 80);
@@ -450,24 +439,17 @@ async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T>
 }
 
 /**
- * Ensure `spec.key` has a value, prompting interactively. If it is already set
- * (placeholders are stripped by loadEnv), show it masked and ask whether to
- * overwrite, defaulting to NO. New values are appended to .env and reflected in
- * the passed-in `env` so the caller sees them without a reload.
- */
-/**
- * Print the field header (name) with its hints expanded *first*, then prompt for
- * the value on the line below. On submit the live prompt is erased and the value
- * is dropped into the header line in place — so you read the `Open:`/`Scope:`
- * hints before typing, and the finished field is `»  NAME  value` with its hints
- * already beneath it. Returns the entered value.
+ * Print the field header (`»  NAME`) with its hints expanded *first*, then prompt
+ * on the line below — so you read the `Open:`/`Scope:` hints before typing. The
+ * live prompt renders as the field's last `↳ <cue>` line; on submit it's erased
+ * and reprinted as `↳ <cue> <value>` (the value masked for secrets), so the cue
+ * stays put with the entered value beside it. Returns the entered value.
  */
 async function promptInPlace(env: Record<string, string>, spec: VarSpec, current?: string): Promise<string> {
   const hintLines = renderHints(spec.hintsFor?.(env) ?? []);
-  console.log([fieldLine(spec.key, "", { pending: true }), ...hintLines].join("\n"));
+  console.log([headerLine(spec.key), ...hintLines].join("\n"));
 
-  // Input renders as a final `↳ <cue>` line, not a repeat of the name.
-  const cue = spec.choices ? "Choose:" : spec.secret ? "Paste key:" : "Enter value:";
+  const cue = cueFor(spec);
   let value: string;
   if (spec.choices) {
     value = await select({ message: cue, default: current, choices: spec.choices, theme: CUE_THEME }, ERASE_ON_DONE);
@@ -478,15 +460,7 @@ async function promptInPlace(env: Record<string, string>, spec: VarSpec, current
         : await input({ message: cue, validate: spec.validate, theme: CUE_THEME }, ERASE_ON_DONE)
     ).trim();
   }
-
-  const finished = fieldLine(spec.key, value, {
-    secret: spec.secret,
-    last4: spec.secret ? value.slice(-4) : undefined,
-    tags: spec.tags,
-  });
-  const up = hintLines.length + 1; // rows from the (erased) prompt back to the header
-  if (process.stdout.isTTY) process.stdout.write(`\x1B[${up}A\r\x1B[2K${finished}\x1B[${up}B\r`);
-  else console.log(finished);
+  console.log(valueHintLine(cue, value, Boolean(spec.secret)));
   return value;
 }
 
@@ -500,12 +474,13 @@ async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<vo
       ERASE_ON_DONE,
     );
     if (!overwrite) {
-      field(spec.key, current, {
-        secret: spec.secret,
-        last4: spec.secret ? current.slice(-4) : undefined,
-        tags: spec.tags,
-        hints: spec.hintsFor?.(env),
-      });
+      console.log(
+        [
+          headerLine(spec.key),
+          ...renderHints(spec.hintsFor?.(env) ?? []),
+          valueHintLine(cueFor(spec), current, Boolean(spec.secret)),
+        ].join("\n"),
+      );
       return;
     }
   }
@@ -521,7 +496,7 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
     webhook: "Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)",
     polling: "orchestrator long-polls the queue (no endpoint, no secret)",
   };
-  console.log(fieldLine(TRIGGER_MODE, "", { pending: true }));
+  console.log(headerLine(TRIGGER_MODE));
   const mode = await select(
     {
       message: "Choose:",
@@ -536,10 +511,7 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   );
   appendExport(ENV_PATH, TRIGGER_MODE, mode);
   env[TRIGGER_MODE] = mode;
-  // The chosen mode's description isn't known until now, so it renders after.
-  const finished = fieldLine(TRIGGER_MODE, mode);
-  if (process.stdout.isTTY) process.stdout.write(`\x1B[1A\r\x1B[2K${finished}\n`);
-  else console.log(finished);
+  console.log(valueHintLine("Choose:", mode, false));
   console.log(renderHints([descriptions[mode] as string]).join("\n"));
 }
 
@@ -619,7 +591,7 @@ async function ensureFromScript(label: string, name: string, script: string, key
   const value = extractValue(out, key);
   if (!value) throw new Error(`could not read ${key} from ${script} output`);
   appendExport(ENV_PATH, key, value);
-  field(name, "", { done: true });
+  field(name, { done: true });
 }
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
@@ -627,7 +599,7 @@ async function deploy(): Promise<string | undefined> {
   const out = await withSpinner("deploying the orchestrator", () =>
     runScript("scripts/deploy-orchestrator.ts"),
   );
-  field("deploy orchestrator", "", { done: true, note: "(idempotent)" });
+  field("deploy orchestrator", { done: true, note: "(idempotent)" });
   return extractValue(out, "PUBLIC_WEBHOOK_URL");
 }
 
