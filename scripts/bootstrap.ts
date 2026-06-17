@@ -177,7 +177,7 @@ const PREREQS: VarSpec[] = [
   {
     key: BUDDY_TOKEN,
     label: "BUDDY_TOKEN (Buddy personal access token)",
-    labelFor: (env) => `BUDDY_TOKEN — Buddy personal access token (${buddySecurityUrl(env[BUDDY_REGION])})`,
+    labelFor: (env) => `BUDDY_TOKEN — generate Buddy personal access token with SANDBOX_MANAGE scope (${buddySecurityUrl(env[BUDDY_REGION])})`,
     secret: true,
     validate: requireValue(),
   },
@@ -197,10 +197,16 @@ const ENV_KEY_SPEC: VarSpec = {
   secret: true,
   validate: requireValue("sk-ant-oat01-"),
 };
+const WEBHOOK_URL = "PUBLIC_WEBHOOK_URL";
+
 const SIGNING_KEY_SPEC: VarSpec = {
   key: SIGNING_KEY,
   label:
     "ANTHROPIC_WEBHOOK_SIGNING_KEY — generate Anthropic Webhook with session.status_run_started event (https://platform.claude.com/settings/workspaces/default/webhooks)",
+  labelFor: (env) => {
+    const endpoint = env[WEBHOOK_URL] ? ` pointing at ${env[WEBHOOK_URL]}` : "";
+    return `ANTHROPIC_WEBHOOK_SIGNING_KEY — generate Anthropic Webhook${endpoint} subscribed to the session.status_run_started event (https://platform.claude.com/settings/workspaces/default/webhooks)`;
+  },
   secret: true,
   validate: requireValue("whsec_"),
 };
@@ -492,8 +498,10 @@ async function main(): Promise<void> {
     if (step === "gate_webhook") {
       lastUrl = await deploy();
       if (interactive) {
-        // The signing-key prompt label carries the Console link + the event to
-        // subscribe to, so there's no separate ">> NEXT" block to print.
+        // The signing-key prompt label carries the Console link, the endpoint
+        // URL to register, and the event to subscribe to, so there's no separate
+        // ">> NEXT" block to print.
+        if (lastUrl) env[WEBHOOK_URL] = lastUrl;
         await ensureVar(env, SIGNING_KEY_SPEC);
         if (env[SIGNING_KEY]) continue;
       } else {
