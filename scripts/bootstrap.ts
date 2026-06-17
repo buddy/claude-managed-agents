@@ -70,6 +70,18 @@ const PROMPT_THEME = {
     answer: (text: string) => `${WHITE}${text}${RESET}`,
   },
 };
+/**
+ * Theme for the live input: it renders as one more `↳` line under the header
+ * (`         ↳ Paste key: …`) rather than repeating the variable name.
+ */
+const CUE_THEME = {
+  prefix: `${" ".repeat(HINT_INDENT)}${DIM}↳${RESET}`,
+  style: {
+    message: (text: string) => `${DIM}${text}${RESET}`,
+    answer: (text: string) => `${WHITE}${text}${RESET}`,
+  },
+};
+
 /** On submit, fully erase the live prompt — the polished field() line replaces it. */
 const ERASE_ON_DONE = { clearPromptOnDone: true } as const;
 
@@ -276,12 +288,12 @@ export interface VarSpec {
   hintsFor?: (env: Record<string, string>) => Hint[];
 }
 
-/** Buddy security/PAT page per region (BUDDY_REGION value → URL). */
-export function buddySecurityUrl(region: string | undefined): string {
+/** Buddy "add personal access token" page per region (BUDDY_REGION value → URL). */
+export function buddyTokenUrl(region: string | undefined): string {
   switch (region) {
-    case "EU": return "https://eu.buddy.works/security";
-    case "AP": return "https://asia.buddy.works/security";
-    default: return "https://app.buddy.works/security";
+    case "EU": return "https://eu.buddy.works/api-tokens/add";
+    case "AP": return "https://asia.buddy.works/api-tokens/add";
+    default: return "https://app.buddy.works/api-tokens/add";
   }
 }
 
@@ -322,10 +334,10 @@ const PREREQS: VarSpec[] = [
   {
     key: BUDDY_TOKEN,
     label: "BUDDY_TOKEN (Buddy personal access token)",
-    labelFor: (env) => `BUDDY_TOKEN — generate Buddy personal access token with SANDBOX_MANAGE scope (${buddySecurityUrl(env[BUDDY_REGION])})`,
+    labelFor: (env) => `BUDDY_TOKEN — generate Buddy personal access token with SANDBOX_MANAGE scope (${buddyTokenUrl(env[BUDDY_REGION])})`,
     secret: true,
     validate: requireValue(),
-    hintsFor: (env) => [`Open: ${shortUrl(buddySecurityUrl(env[BUDDY_REGION]))}`, "Scope: SANDBOX_MANAGE"],
+    hintsFor: (env) => [`Open: ${shortUrl(buddyTokenUrl(env[BUDDY_REGION]))}`, "Scope: SANDBOX_MANAGE"],
   },
   { key: BUDDY_WORKSPACE, label: "BUDDY_WORKSPACE (workspace domain)", validate: requireValue() },
   { key: BUDDY_PROJECT, label: "BUDDY_PROJECT (project name)", validate: requireValue() },
@@ -454,15 +466,16 @@ async function promptInPlace(env: Record<string, string>, spec: VarSpec, current
   const hintLines = renderHints(spec.hintsFor?.(env) ?? []);
   console.log([fieldLine(spec.key, "", { pending: true }), ...hintLines].join("\n"));
 
-  const message = spec.key;
+  // Input renders as a final `↳ <cue>` line, not a repeat of the name.
+  const cue = spec.choices ? "Choose:" : spec.secret ? "Paste key:" : "Enter value:";
   let value: string;
   if (spec.choices) {
-    value = await select({ message, default: current, choices: spec.choices, theme: PROMPT_THEME }, ERASE_ON_DONE);
+    value = await select({ message: cue, default: current, choices: spec.choices, theme: CUE_THEME }, ERASE_ON_DONE);
   } else {
     value = (
       spec.secret
-        ? await password({ message, mask: "•", validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
-        : await input({ message, validate: spec.validate, theme: PROMPT_THEME }, ERASE_ON_DONE)
+        ? await password({ message: cue, mask: "•", validate: spec.validate, theme: CUE_THEME }, ERASE_ON_DONE)
+        : await input({ message: cue, validate: spec.validate, theme: CUE_THEME }, ERASE_ON_DONE)
     ).trim();
   }
 
@@ -511,9 +524,9 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   console.log(fieldLine(TRIGGER_MODE, "", { pending: true }));
   const mode = await select(
     {
-      message: "TRIGGER_MODE — how the orchestrator learns about queued work",
+      message: "Choose:",
       default: current,
-      theme: PROMPT_THEME,
+      theme: CUE_THEME,
       choices: [
         { name: `webhook — ${descriptions.webhook}`, value: "webhook" },
         { name: `polling — ${descriptions.polling}`, value: "polling" },
