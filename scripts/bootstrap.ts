@@ -45,8 +45,14 @@ const RESET = COLOR ? "\x1b[0m" : "";
 const MARK_USER = `${WHITE}»${RESET}`;
 const MARK_DONE = `${HOST}✔${RESET}`;
 
-const HINT_INDENT = 9; // spaces before the ↳ glyph
+const HINT_INDENT = 5; // spaces before the ↳ glyph
 const HINT_BODY = HINT_INDENT + 2; // text column, just past "↳ "
+const CHOICE_PAD = " ".repeat(HINT_INDENT); // prefix that aligns select choices with hints
+
+/** Indent a select's choices so their text lines up with the ↳ hint column. */
+function indentChoices<T extends { name: string }>(choices: T[]): T[] {
+  return choices.map((c) => ({ ...c, name: `${CHOICE_PAD}${c.name}` }));
+}
 const RULE_W = 63; // width of banner / section rules
 
 /** Mask a secret for display: fixed dots + the last 4 chars to confirm identity. */
@@ -141,15 +147,17 @@ function renderHints(hints: Hint[]): string[] {
 
 interface FieldOpts {
   done?: boolean; // ✔ (script produced it) vs » (you supplied it)
+  value?: string; // shown as `: value` after the name (e.g. an id a ✔ step produced)
   note?: string; // dim aside after the name, e.g. on a value-less ✔ step
   hints?: Hint[]; // ↳ lines rendered under the field
 }
 
-/** The header line for a field: `»  NAME` (you supply) or `✔  NAME` (script did). */
-function headerLine(name: string, opts: { done?: boolean; note?: string } = {}): string {
+/** The header line for a field: `»  NAME` (you supply) or `✔  NAME: value` (script did). */
+function headerLine(name: string, opts: { done?: boolean; value?: string; note?: string } = {}): string {
   const glyph = opts.done ? MARK_DONE : MARK_USER;
+  const body = opts.value ? `${HOST}${name}:${RESET} ${WHITE}${opts.value}${RESET}` : `${HOST}${name}${RESET}`;
   const note = opts.note ? `  ${DIM}${opts.note}${RESET}` : "";
-  return `${glyph}  ${HOST}${name}${RESET}${note}`;
+  return `${glyph}  ${body}${note}`;
 }
 
 /** A `↳ <cue> <value>` line — the entered value (masked for secrets) under its prompt. */
@@ -345,10 +353,7 @@ const ENV_KEY_SPEC: VarSpec = {
   labelFor: (env) => `ANTHROPIC_ENVIRONMENT_KEY — Generate Environment key (${environmentKeyUrl(env[ENV_ID])})`,
   secret: true,
   validate: requireValue("sk-ant-oat01-"),
-  hintsFor: (env) => [
-    "Open: platform.claude.com/workspaces/default/environments/…",
-    { label: "tied to", value: env[ENV_ID] ?? "" },
-  ],
+  hintsFor: (env) => [`Open: ${shortUrl(environmentKeyUrl(env[ENV_ID]))}`],
 };
 const WEBHOOK_URL = "PUBLIC_WEBHOOK_URL";
 
@@ -452,7 +457,7 @@ async function promptInPlace(env: Record<string, string>, spec: VarSpec, current
   const cue = cueFor(spec);
   let value: string;
   if (spec.choices) {
-    value = await select({ message: cue, default: current, choices: spec.choices, theme: CUE_THEME }, ERASE_ON_DONE);
+    value = await select({ message: cue, default: current, choices: indentChoices(spec.choices), theme: CUE_THEME }, ERASE_ON_DONE);
   } else {
     value = (
       spec.secret
@@ -492,27 +497,22 @@ async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<vo
 /** Prompt for the trigger mode (webhook vs polling) and persist the choice. */
 async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
   const current = isPollingMode(env) ? "polling" : "webhook";
-  const descriptions: Record<string, string> = {
-    webhook: "Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)",
-    polling: "orchestrator long-polls the queue (no endpoint, no secret)",
-  };
   console.log(headerLine(TRIGGER_MODE));
   const mode = await select(
     {
       message: "Choose:",
       default: current,
       theme: CUE_THEME,
-      choices: [
-        { name: `webhook — ${descriptions.webhook}`, value: "webhook" },
-        { name: `polling — ${descriptions.polling}`, value: "polling" },
-      ],
+      choices: indentChoices([
+        { name: "webhook — Anthropic POSTs to a public endpoint (lower latency, needs a signing secret)", value: "webhook" },
+        { name: "polling — orchestrator long-polls the queue (no endpoint, no secret)", value: "polling" },
+      ]),
     },
     ERASE_ON_DONE,
   );
   appendExport(ENV_PATH, TRIGGER_MODE, mode);
   env[TRIGGER_MODE] = mode;
   console.log(valueHintLine("Choose:", mode, false));
-  console.log(renderHints([descriptions[mode] as string]).join("\n"));
 }
 
 /**
@@ -591,7 +591,7 @@ async function ensureFromScript(label: string, name: string, script: string, key
   const value = extractValue(out, key);
   if (!value) throw new Error(`could not read ${key} from ${script} output`);
   appendExport(ENV_PATH, key, value);
-  field(name, { done: true });
+  field(name, { done: true, value });
 }
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
@@ -661,7 +661,7 @@ async function main(): Promise<void> {
     if (!interactive) printState(env);
 
     if (step === "create_env") {
-      await ensureFromScript("creating the self-hosted environment", "create self-hosted environment", "scripts/create-environment.ts", ENV_ID);
+      await ensureFromScript("creating the self-hosted environment", "Claude self-hosted environment", "scripts/create-environment.ts", ENV_ID);
       continue;
     }
     if (step === "gate_env_key") {
@@ -675,8 +675,8 @@ async function main(): Promise<void> {
       return;
     }
     if (step === "provision") {
-      if (!env[AGENT_ID]) await ensureFromScript("creating the agent", "create agent", "scripts/create-agent.ts", AGENT_ID);
-      if (!env[SNAPSHOT_ID]) await ensureFromScript("building the base snapshot", "build base snapshot", "scripts/build-snapshot.ts", SNAPSHOT_ID);
+      if (!env[AGENT_ID]) await ensureFromScript("creating the agent", "Claude agent", "scripts/create-agent.ts", AGENT_ID);
+      if (!env[SNAPSHOT_ID]) await ensureFromScript("building the base snapshot", "base snapshot", "scripts/build-snapshot.ts", SNAPSHOT_ID);
       continue;
     }
     if (step === "gate_webhook") {
