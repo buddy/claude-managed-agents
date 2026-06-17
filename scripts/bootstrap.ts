@@ -602,7 +602,7 @@ async function deploy(): Promise<string | undefined> {
   const out = await withSpinner("Deploying the orchestrator", () =>
     runScript("scripts/deploy-orchestrator.ts"),
   );
-  field("Deploy orchestrator", { done: true, note: "(idempotent)" });
+  field("Deploy orchestrator", { done: true });
   return extractValue(out, "PUBLIC_WEBHOOK_URL");
 }
 

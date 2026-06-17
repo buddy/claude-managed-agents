@@ -1,56 +1,36 @@
 /**
  * Interactive session runner. Creates a session against the agent + self-hosted
  * environment, then drops into a prompt loop: you type a prompt, it sends it,
- * waits for the transcript to go idle, and prints the agent's response. Submit
- * an empty line (or type `exit`) to quit.
+ * waits for the agent to finish the turn, and prints the response. Submit an
+ * empty line (or type `exit`) to quit.
+ *
+ * A single long-lived event stream is opened once and consumed by a background
+ * reader. A turn is considered finished only when the transcript goes idle AND
+ * no tool call is still outstanding — the session parks on `idle` mid-turn while
+ * the orchestrator dispatches a tool to the worker, so plain "idle" is not the
+ * end of the turn.
  *
  * Requires a deployed + webhook-registered orchestrator (it does the dispatch).
  *
  *   npm run session
  */
 import { input } from "@inquirer/prompts";
-import Anthropic from "@anthropic-ai/sdk";
 
 import { anthropicAdminClient, BETA } from "../src/clients.js";
 import { requireAgentId, requireEnvironmentId } from "../src/config.js";
 import { errLabel, sleep } from "../src/util.js";
 
-const IDLE_TIMEOUT_MS = 180_000;
+const TURN_TIMEOUT_MS = 180_000;
 
-function isTerminal(ev: { type?: string }): boolean {
-  const t = ev.type ?? "";
-  return t.includes("status_idle") || t.includes("status_terminated") || t.includes("status_run_ended");
+interface StreamEvent {
+  type?: string;
+  id?: string;
+  tool_use_id?: string;
+  content?: Array<{ type?: string; text?: string }>;
 }
 
-/**
- * Streams events until the transcript reaches a terminal state, collecting the
- * text of any `agent.message` events whose id we haven't seen before. `seen`
- * dedupes across turns in case the stream replays earlier events.
- */
-async function waitForResponse(
-  client: Anthropic,
-  sessionId: string,
-  seen: Set<string>,
-): Promise<{ idle: boolean; text: string }> {
-  const parts: string[] = [];
-
-  const consume = (async () => {
-    const stream = await client.beta.sessions.events.stream(sessionId);
-    for await (const ev of stream as AsyncIterable<{ type?: string; id?: string; content?: Array<{ type?: string; text?: string }> }>) {
-      if (ev.type === "agent.message" && ev.id && !seen.has(ev.id)) {
-        seen.add(ev.id);
-        for (const block of ev.content ?? []) {
-          if (block.type === "text" && block.text) parts.push(block.text);
-        }
-      }
-      if (isTerminal(ev)) return true;
-    }
-    return false;
-  })();
-
-  const timeout = sleep(IDLE_TIMEOUT_MS).then(() => false);
-  const idle = await Promise.race([consume, timeout]);
-  return { idle, text: parts.join("\n").trim() };
+function isIdle(type: string): boolean {
+  return type.includes("status_idle") || type.includes("status_terminated") || type.includes("status_run_ended");
 }
 
 async function main(): Promise<void> {
@@ -63,22 +43,74 @@ async function main(): Promise<void> {
   console.log(`session: ${session.id}`);
   console.log("Type a prompt and press Enter. Submit an empty line or `exit` to quit.\n");
 
-  const seen = new Set<string>();
+  const stream = await client.beta.sessions.events.stream(session.id);
 
-  for (;;) {
-    const prompt = (await input({ message: "you:" })).trim();
-    if (prompt === "" || prompt.toLowerCase() === "exit") break;
+  // Per-turn state, reset by the input loop before each send.
+  let awaiting = false; // are we currently waiting for a turn to finish?
+  let sawActivity = false; // have we seen the agent start working since the send?
+  const pending = new Set<string>(); // outstanding tool_use ids (turn isn't done until empty)
+  let collected: string[] = []; // agent.message text gathered this turn
+  const turn: { resolve: ((text: string) => void) | null } = { resolve: null };
 
-    await client.beta.sessions.events.send(session.id, {
-      events: [{ type: "user.message", content: [{ type: "text", text: prompt }] }],
-    });
+  // Background reader: a single pass over the whole session stream.
+  const reader = (async () => {
+    for await (const raw of stream as AsyncIterable<StreamEvent>) {
+      if (!awaiting) continue; // ignore startup replay and between-turn chatter
+      const type = raw.type ?? "";
 
-    const { idle, text } = await waitForResponse(client, session.id, seen);
-    if (!idle) {
-      console.log("(timed out waiting for the transcript to go idle)\n");
-      continue;
+      if (type === "session.status_running" || type.startsWith("agent.")) sawActivity = true;
+
+      if (type === "agent.message") {
+        for (const block of raw.content ?? []) {
+          if (block.type === "text" && block.text) collected.push(block.text);
+        }
+      } else if (type === "agent.tool_use" || type === "agent.custom_tool_use" || type === "agent.mcp_tool_use") {
+        if (raw.id) pending.add(raw.id);
+      } else if (type === "agent.tool_result" || type === "agent.mcp_tool_result") {
+        if (raw.tool_use_id) pending.delete(raw.tool_use_id);
+      }
+
+      // Turn is done only once we've seen the agent work AND every tool finished.
+      if (sawActivity && pending.size === 0 && isIdle(type)) {
+        const resolve = turn.resolve;
+        awaiting = false;
+        turn.resolve = null;
+        if (resolve) resolve(collected.join("\n").trim());
+      }
     }
-    console.log(`\nagent: ${text || "(no text response)"}\n`);
+  })();
+  reader.catch((e) => console.error(`stream error: ${errLabel(e)}`));
+
+  try {
+    for (;;) {
+      const prompt = (await input({ message: "you:" })).trim();
+      if (prompt === "" || prompt.toLowerCase() === "exit") break;
+
+      // Arm the state machine before sending so we don't miss fast events.
+      collected = [];
+      pending.clear();
+      sawActivity = false;
+      const turnDone = new Promise<string>((resolve) => {
+        turn.resolve = resolve;
+      });
+      awaiting = true;
+
+      await client.beta.sessions.events.send(session.id, {
+        events: [{ type: "user.message", content: [{ type: "text", text: prompt }] }],
+      });
+
+      const TIMEOUT = Symbol("timeout");
+      const result = await Promise.race([turnDone, sleep(TURN_TIMEOUT_MS).then(() => TIMEOUT)]);
+      if (result === TIMEOUT) {
+        awaiting = false;
+        turn.resolve = null;
+        console.log("(timed out waiting for the turn to finish)\n");
+        continue;
+      }
+      console.log(`\nagent: ${(result as string) || "(no text response)"}\n`);
+    }
+  } finally {
+    stream.controller.abort();
   }
 
   console.log("bye");
