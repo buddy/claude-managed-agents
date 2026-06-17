@@ -28,24 +28,111 @@ import { spawn } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { styleText } from "node:util";
 
 import { confirm, input, password, select } from "@inquirer/prompts";
 
+// --- presentation layer (colors + field/section rendering) -----------------
+// Pure formatting; carries no logic. Colors collapse to '' when output is not a
+// TTY or NO_COLOR is set, so piped/CI output stays plain.
+
+const COLOR = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+const HOST = COLOR ? "\x1b[2;36m" : ""; // dim cyan — var names, ✔ marker, separators
+const WHITE = COLOR ? "\x1b[97m" : ""; // bright white — » marker, entered values
+const DIM = COLOR ? "\x1b[2m" : ""; // hints (↳), secret masks, tags
+const RESET = COLOR ? "\x1b[0m" : "";
+
+/** Glyphs: » = a value you supply, ✔ = a value a script produced. */
+const MARK_USER = `${WHITE}»${RESET}`;
+const MARK_DONE = `${HOST}✔${RESET}`;
+
+// Fixed columns so every field lines up. Longest var name is
+// ANTHROPIC_WEBHOOK_SIGNING_KEY (29); pad to 31 for breathing room.
+const NAME_W = 31;
+const MARK_INDENT = "   "; // 3 spaces before the glyph
+const VALUE_COL = MARK_INDENT.length + 3 + NAME_W; // 3 + (glyph + 2 spaces) + NAME_W
+
 /**
- * Shared prompt theme: question text in cyan, with any parenthetical aside
- * (URLs, hints) in white — matching the model accent in the Claude Code
- * status line. The submitted answer is white too.
+ * Style a prompt label: variable name / prose in HOST (dim cyan), any
+ * parenthetical aside (URLs, hints) in DIM.
  */
+function styleMessage(text: string): string {
+  return text.replace(/(\([^)]*\))|([^(]+)/g, (_m, paren, rest) =>
+    paren ? `${DIM}${paren}${RESET}` : `${HOST}${rest}${RESET}`,
+  );
+}
+
+/** Shared inquirer theme: » prefix (white), label in HOST, entered value white. */
 const PROMPT_THEME = {
-  style: {
-    message: (text: string) =>
-      text.replace(/(\([^)]*\))|([^(]+)/g, (_m, paren, rest) =>
-        paren ? styleText("white", paren) : styleText("cyan", rest),
-      ),
-    answer: (text: string) => styleText("white", text),
-  },
+  prefix: MARK_USER,
+  style: { message: styleMessage, answer: (text: string) => `${WHITE}${text}${RESET}` },
 };
+
+/** Secrets render as a fixed mask on submit — never the real length. */
+const SECRET_THEME = {
+  ...PROMPT_THEME,
+  style: { ...PROMPT_THEME.style, answer: () => `${DIM}········${RESET}` },
+};
+
+/** Wrap a hint to the terminal width on spaces only (never mid-token, e.g. URLs). */
+function wrapHint(text: string, indentWidth: number): string[] {
+  const width = (process.stdout.columns || 80) - indentWidth - 2; // minus "↳ "
+  if (width <= 0 || text.length <= width) return [text];
+  const out: string[] = [];
+  let cur = "";
+  for (const word of text.split(" ")) {
+    if (cur && cur.length + 1 + word.length > width) {
+      out.push(cur);
+      cur = word;
+    } else {
+      cur = cur ? `${cur} ${word}` : word;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+interface FieldOpts {
+  secret?: boolean; // mask the value
+  last4?: string; // trailing chars to confirm a secret's identity
+  done?: boolean; // ✔ (script produced it) vs » (you supplied it)
+  hints?: string[]; // ↳ lines rendered under the value
+}
+
+/** Render one form field: `  ⟪marker⟫  NAME            value   ⟪tags⟫` + hint lines. */
+function field(name: string, value: string, opts: FieldOpts = {}): void {
+  const glyph = opts.done ? MARK_DONE : MARK_USER;
+  const namePad = name.length >= NAME_W ? `${name} ` : name.padEnd(NAME_W);
+  const valuePart = opts.secret
+    ? `${DIM}········${opts.last4 ?? ""}${RESET}`
+    : `${WHITE}${value}${RESET}`;
+  const tag = opts.secret ? `   ${DIM}secret${RESET}` : "";
+  const lines = [`${MARK_INDENT}${glyph}  ${HOST}${namePad}${RESET}${valuePart}${tag}`];
+  const cont = " ".repeat(VALUE_COL);
+  for (const hint of opts.hints ?? []) {
+    wrapHint(hint, VALUE_COL).forEach((seg, i) => {
+      lines.push(`${cont}${DIM}${i === 0 ? "↳ " : "  "}${seg}${RESET}`);
+    });
+  }
+  console.log(lines.join("\n"));
+}
+
+/** A dashed section header, e.g. `┄┄ Credentials ┄┄┄┄┄…`. */
+function sectionHeader(title: string): void {
+  const left = `┄┄ ${title} `;
+  const fill = "┄".repeat(Math.max(3, 56 - left.length));
+  console.log(`\n${HOST}${left}${fill}${RESET}`);
+}
+
+/** Banner, printed once at the very top. */
+function banner(): void {
+  console.log(`\n${HOST}CREATING ANTHROPIC SELF-HOSTED AGENT${RESET}`);
+}
+
+/** Closing summary once everything is wired up. */
+function footer(): void {
+  console.log(`\n${HOST}✓${RESET} Setup complete.`);
+  console.log(`  ${DIM}→${RESET} ${WHITE}npm run run-session${RESET}     to prove it end-to-end.`);
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
@@ -250,46 +337,33 @@ function isInteractive(): boolean {
 }
 
 /**
- * Run an async task behind a braille spinner that narrates `label`, then resolve
- * the line into a green tick `✔ label` so the autonomous steps read like the
- * already-answered prompts from the prerequisites form. The label is styled with
- * the shared prompt theme (cyan text, white parentheticals) for visual parity.
- *
- * On a non-TTY (CI/pipes) there is no animation: it just prints `✔ label` once
- * the task finishes (or `✖ label` on failure), keeping logs clean.
+ * Run an async task behind a braille spinner that narrates `label` (dim cyan).
+ * The spinner is purely transient: once the task settles its line is erased, so
+ * the caller can render the finished step as a proper ✔ field. On a non-TTY
+ * (CI/pipes) there is no animation at all.
  */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T> {
-  const styled = PROMPT_THEME.style.message(label);
-  const tick = (mark: string, color: "green" | "red") => `${styleText(color, mark)} ${styled}`;
-
-  if (!process.stdout.isTTY) {
-    const result = await task();
-    console.log(tick("✔", "green"));
-    return result;
-  }
+  if (!process.stdout.isTTY) return task();
 
   let i = 0;
   process.stdout.write("\x1B[?25l"); // hide cursor
   const render = () => {
-    const frame = styleText("cyan", SPINNER_FRAMES[i] as string);
+    const frame = SPINNER_FRAMES[i] as string;
     i = (i + 1) % SPINNER_FRAMES.length;
-    process.stdout.write(`\r\x1B[2K${frame} ${styled}`);
+    process.stdout.write(`\r\x1B[2K${MARK_INDENT}${HOST}${frame}  ${DIM}${label}…${RESET}`);
   };
   render();
   const timer = setInterval(render, 80);
-  const finish = (mark: string, color: "green" | "red") => {
+  const clear = () => {
     clearInterval(timer);
-    process.stdout.write(`\r\x1B[2K${tick(mark, color)}\n\x1B[?25h`); // restore cursor
+    process.stdout.write(`\r\x1B[2K\x1B[?25h`); // erase line, restore cursor
   };
   try {
-    const result = await task();
-    finish("✔", "green");
-    return result;
-  } catch (e) {
-    finish("✖", "red");
-    throw e;
+    return await task();
+  } finally {
+    clear();
   }
 }
 
@@ -302,8 +376,10 @@ async function withSpinner<T>(label: string, task: () => Promise<T>): Promise<T>
 async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<void> {
   const current = env[spec.key];
   if (current) {
-    const shown = spec.secret ? maskSecret(current) : current;
-    console.log(`  ok ${spec.key} already set (${shown})`);
+    field(spec.key, current, {
+      secret: spec.secret,
+      last4: spec.secret ? current.slice(-4) : undefined,
+    });
     const overwrite = await confirm({ message: `Overwrite ${spec.key}?`, default: false, theme: PROMPT_THEME });
     if (!overwrite) return;
   }
@@ -314,7 +390,7 @@ async function ensureVar(env: Record<string, string>, spec: VarSpec): Promise<vo
   } else {
     value = (
       spec.secret
-        ? await password({ message: label, mask: "*", validate: spec.validate, theme: PROMPT_THEME })
+        ? await password({ message: label, mask: "•", validate: spec.validate, theme: SECRET_THEME })
         : await input({ message: label, validate: spec.validate, theme: PROMPT_THEME })
     ).trim();
   }
@@ -409,19 +485,22 @@ function manualTail(spec: VarSpec): void {
   );
 }
 
-async function ensureFromScript(label: string, script: string, key: string): Promise<void> {
+async function ensureFromScript(label: string, name: string, script: string, key: string): Promise<void> {
   const out = await withSpinner(label, () => runScript(script));
   const value = extractValue(out, key);
   if (!value) throw new Error(`could not read ${key} from ${script} output`);
   appendExport(ENV_PATH, key, value);
+  field(name, value, { done: true });
 }
 
 /** Deploy (idempotent) and return the printed webhook URL, if any. */
 async function deploy(): Promise<string | undefined> {
-  const out = await withSpinner("deploying the orchestrator (idempotent)", () =>
+  const out = await withSpinner("deploying the orchestrator", () =>
     runScript("scripts/deploy-orchestrator.ts"),
   );
-  return extractValue(out, "PUBLIC_WEBHOOK_URL");
+  const url = extractValue(out, "PUBLIC_WEBHOOK_URL");
+  field("deploy orchestrator", "ready", { done: true, hints: url ? [url] : [] });
+  return url;
 }
 
 function planLabel(step: Step): string {
@@ -451,9 +530,10 @@ async function main(): Promise<void> {
   // (CI/pipes) just fail fast if something is missing rather than hanging.
   if (interactive) {
     if (seedEnvFromExample(ENV_PATH, ENV_EXAMPLE_PATH)) {
-      console.log("\ncreated .env from .env.example (fill in the values below).");
+      console.log(`\n${DIM}created .env from .env.example${RESET}`);
     }
-    console.log("\nPrerequisites (Ctrl+C to abort; you'll be asked before overwriting anything already set):");
+    banner();
+    sectionHeader("Credentials");
     const env0 = loadEnv();
     for (const spec of PREREQS) await ensureVar(env0, spec);
     await ensureTriggerMode(env0);
@@ -464,6 +544,8 @@ async function main(): Promise<void> {
       throw new Error(`missing required env (non-interactive run): ${missing.join(", ")}`);
     }
   }
+
+  if (interactive) sectionHeader("Provision & wire-up");
 
   let lastUrl: string | undefined;
   // Loop through autonomous steps until we hit a gate or finish. Each iteration
@@ -477,7 +559,7 @@ async function main(): Promise<void> {
     if (!interactive) printState(env);
 
     if (step === "create_env") {
-      await ensureFromScript("creating the self-hosted environment", "scripts/create-environment.ts", ENV_ID);
+      await ensureFromScript("creating the self-hosted environment", "create self-hosted environment", "scripts/create-environment.ts", ENV_ID);
       continue;
     }
     if (step === "gate_env_key") {
@@ -491,8 +573,8 @@ async function main(): Promise<void> {
       return;
     }
     if (step === "provision") {
-      if (!env[AGENT_ID]) await ensureFromScript("creating the agent", "scripts/create-agent.ts", AGENT_ID);
-      if (!env[SNAPSHOT_ID]) await ensureFromScript("building the base snapshot", "scripts/build-snapshot.ts", SNAPSHOT_ID);
+      if (!env[AGENT_ID]) await ensureFromScript("creating the agent", "create agent", "scripts/create-agent.ts", AGENT_ID);
+      if (!env[SNAPSHOT_ID]) await ensureFromScript("building the base snapshot", "build base snapshot", "scripts/build-snapshot.ts", SNAPSHOT_ID);
       continue;
     }
     if (step === "gate_webhook") {
@@ -512,7 +594,7 @@ async function main(): Promise<void> {
     }
     // finalize
     await deploy();
-    console.log("\nsetup complete — run `npm run run-session` to prove it end to end.");
+    footer();
     return;
   }
 }
