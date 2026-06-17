@@ -36,9 +36,9 @@ import { confirm, input, password, select } from "@inquirer/prompts";
 // TTY or NO_COLOR is set, so piped/CI output stays plain.
 
 const COLOR = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
-const HOST = COLOR ? "\x1b[2;36m" : ""; // dim cyan — var names, ✔ marker, separators
+const HOST = COLOR ? "\x1b[36m" : ""; // crisp cyan — var names, ✔ marker, separators
 const WHITE = COLOR ? "\x1b[97m" : ""; // bright white — » marker, entered values
-const DIM = COLOR ? "\x1b[2m" : ""; // hints (↳), secret masks, tags
+const DIM = COLOR ? "\x1b[90m" : ""; // gray (bright-black) — hints (↳), secret masks, tags
 const RESET = COLOR ? "\x1b[0m" : "";
 
 /** Glyphs: » = a value you supply, ✔ = a value a script produced. */
