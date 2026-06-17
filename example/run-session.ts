@@ -27,6 +27,7 @@ interface StreamEvent {
   type?: string;
   id?: string;
   tool_use_id?: string;
+  custom_tool_use_id?: string;
   content?: Array<{ type?: string; text?: string }>;
 }
 
@@ -71,8 +72,12 @@ async function main(): Promise<void> {
         }
       } else if (type === "agent.tool_use" || type === "agent.custom_tool_use" || type === "agent.mcp_tool_use") {
         if (raw.id) pending.add(raw.id);
-      } else if (type === "agent.tool_result" || type === "agent.mcp_tool_result") {
+      } else if (type === "agent.tool_result" || type === "agent.mcp_tool_result" || type === "user.tool_result") {
+        // In this self-hosted setup the worker posts tool results back as
+        // `user.tool_result` events, not `agent.tool_result`.
         if (raw.tool_use_id) pending.delete(raw.tool_use_id);
+      } else if (type === "user.custom_tool_result") {
+        if (raw.custom_tool_use_id) pending.delete(raw.custom_tool_use_id);
       }
 
       // Turn is done only once we've seen the agent work AND every tool finished.
