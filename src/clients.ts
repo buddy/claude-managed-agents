@@ -9,6 +9,7 @@
  * the orchestrator sandbox.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
 
 import { CONFIG, requireApiKey, requireEnvironmentKey } from "./config.js";
 
@@ -28,15 +29,8 @@ export function anthropicAdminClient(): Anthropic {
   });
 }
 
-export interface BuddyConnection {
-  workspace?: string;
-  project?: string;
-  token?: string;
-  region?: "US" | "EU" | "AP";
-}
-
 /** Explicit Buddy connection from env, or undefined to let the SDK read env itself. */
-export function buddyConnection(): BuddyConnection | undefined {
+export function buddyConnection(): ConnectionConfig | undefined {
   // Prefer CMA_BUDDY_TOKEN (the workspace token we inject into the orchestrator
   // sandbox) over the sandbox's auto-injected, self-scoped BUDDY_TOKEN. Locally,
   // only BUDDY_TOKEN is set, so scripts keep working off `.env`.

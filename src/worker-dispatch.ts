@@ -10,7 +10,8 @@
  * sandbox variables at creation (the key encrypted) and the per-run
  * `ANTHROPIC_WORK_ID` is inlined into the BASH command string.
  */
-import type { BuddyConnection } from "./clients.js";
+import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
+
 import { CONFIG } from "./config.js";
 import type { Logger } from "./log.js";
 import { workerIdentifier } from "./naming.js";
@@ -33,7 +34,7 @@ export interface DispatcherDeps {
   baseSnapshotId: string;
   log: Logger;
   baseUrl?: string;
-  connection?: BuddyConnection;
+  connection?: ConnectionConfig;
 }
 
 /** Newest work item per session wins; everything else for that session is dropped. */

@@ -8,7 +8,8 @@
  * and from the `ant` command text (work id) — not from tags — so tags stay to
  * Buddy's safe character set (see tags.ts).
  */
-import type { BuddyConnection } from "./clients.js";
+import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
+
 import { CONFIG } from "./config.js";
 import type { Logger } from "./log.js";
 import { isWorkerIdentifier } from "./naming.js";
@@ -24,7 +25,7 @@ export interface JanitorDeps {
   dispatcher: Dispatcher;
   environmentId: string;
   log: Logger;
-  connection?: BuddyConnection;
+  connection?: ConnectionConfig;
 }
 
 const DAY_MS = 86_400_000;
