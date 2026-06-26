@@ -7,7 +7,7 @@
  */
 import "dotenv/config";
 
-import type { CreateFromSnapshotConfig } from "@buddy-works/sandbox-sdk";
+import type { CreateFromSnapshotConfig, Region } from "@buddy-works/sandbox-sdk";
 
 function str(name: string): string | undefined {
   const v = process.env[name];
@@ -81,7 +81,7 @@ export const CONFIG = {
   pollerEnabled: bool("POLLER_ENABLED", true),
 
   // Buddy connection
-  region: (str("BUDDY_REGION") ?? "US") as "US" | "EU" | "AP",
+  region: (str("BUDDY_REGION") ?? "US") as Region,
   tunnelRegion: (str("BUDDY_TUNNEL_REGION") ?? "US") as "US" | "EU" | "AS",
 
   // Optional Anthropic overrides
