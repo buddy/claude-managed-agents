@@ -7,6 +7,8 @@
  */
 import "dotenv/config";
 
+import type { CreateFromSnapshotConfig } from "@buddy-works/sandbox-sdk";
+
 function str(name: string): string | undefined {
   const v = process.env[name];
   return v && v.trim() !== "" ? v.trim() : undefined;
@@ -31,20 +33,7 @@ function bool(name: string, fallback: boolean): boolean {
   return /^(1|true|yes|on)$/i.test(v);
 }
 
-export type SandboxResources =
-  | "1x2"
-  | "2x4"
-  | "3x6"
-  | "4x8"
-  | "5x10"
-  | "6x12"
-  | "7x14"
-  | "8x16"
-  | "9x18"
-  | "10x20"
-  | "11x22"
-  | "12x24"
-  | "CUSTOM";
+export type SandboxResources = NonNullable<CreateFromSnapshotConfig["resources"]>;
 
 export const BETA = str("ANTHROPIC_BETA") ?? "managed-agents-2026-04-01";
 
