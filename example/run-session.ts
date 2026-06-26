@@ -18,7 +18,7 @@ import { input } from "@inquirer/prompts";
 
 import { anthropicAdminClient, BETA } from "../src/clients.js";
 import { requireAgentId, requireEnvironmentId } from "../src/config.js";
-import { errLabel, sleep } from "../src/util.js";
+import { errLabel } from "../src/util.js";
 
 const TURN_TIMEOUT_MS = 180_000;
 const DEBUG = !!process.env.DEBUG; // DEBUG=1 npm run session -> logs every event
@@ -71,13 +71,22 @@ async function main(): Promise<void> {
           if (block.type === "text" && block.text) collected.push(block.text);
         }
       } else if (type === "agent.tool_use" || type === "agent.custom_tool_use" || type === "agent.mcp_tool_use") {
-        if (raw.id) pending.add(raw.id);
-      } else if (type === "agent.tool_result" || type === "agent.mcp_tool_result" || type === "user.tool_result") {
-        // In this self-hosted setup the worker posts tool results back as
-        // `user.tool_result` events, not `agent.tool_result`.
-        if (raw.tool_use_id) pending.delete(raw.tool_use_id);
-      } else if (type === "user.custom_tool_result") {
-        if (raw.custom_tool_use_id) pending.delete(raw.custom_tool_use_id);
+        // Custom-tool events key off `custom_tool_use_id`; everything else off
+        // `id`. Track whichever this event carries so the matching result can
+        // clear it — see the symmetric lookup in the result branch below.
+        const id = raw.custom_tool_use_id ?? raw.id;
+        if (id) pending.add(id);
+      } else if (
+        type === "agent.tool_result" ||
+        type === "agent.mcp_tool_result" ||
+        type === "user.tool_result" ||
+        type === "user.custom_tool_result"
+      ) {
+        // In this self-hosted setup the worker posts results back as
+        // `user.tool_result` / `user.custom_tool_result`, not `agent.*`.
+        // Match the id field to whichever the tool_use event added above.
+        const id = raw.custom_tool_use_id ?? raw.tool_use_id;
+        if (id) pending.delete(id);
       }
 
       // Turn is done only once we've seen the agent work AND every tool finished.
@@ -91,6 +100,7 @@ async function main(): Promise<void> {
   })();
   reader.catch((e) => console.error(`stream error: ${errLabel(e)}`));
 
+  const TIMEOUT = Symbol("timeout");
   try {
     for (;;) {
       const prompt = (await input({ message: "you:" })).trim();
@@ -109,15 +119,21 @@ async function main(): Promise<void> {
         events: [{ type: "user.message", content: [{ type: "text", text: prompt }] }],
       });
 
-      const TIMEOUT = Symbol("timeout");
-      const result = await Promise.race([turnDone, sleep(TURN_TIMEOUT_MS).then(() => TIMEOUT)]);
+      // Cancelable timeout: clear the timer once the turn settles so a finished
+      // turn doesn't leave a dangling 180s timer keeping the process alive.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<typeof TIMEOUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMEOUT), TURN_TIMEOUT_MS);
+      });
+      const result = await Promise.race([turnDone, timeout]);
+      clearTimeout(timer);
       if (result === TIMEOUT) {
         awaiting = false;
         turn.resolve = null;
         console.log("(timed out waiting for the turn to finish)\n");
         continue;
       }
-      console.log(`\nagent: ${(result as string) || "(no text response)"}\n`);
+      console.log(`\nagent: ${result || "(no text response)"}\n`);
     }
   } finally {
     stream.controller.abort();
