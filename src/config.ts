@@ -7,6 +7,7 @@
  */
 import "dotenv/config";
 
+import { REGIONS } from "@buddy-works/sandbox-sdk";
 import type { CreateFromSnapshotConfig, Region } from "@buddy-works/sandbox-sdk";
 
 function str(name: string): string | undefined {
@@ -33,7 +34,27 @@ function bool(name: string, fallback: boolean): boolean {
   return /^(1|true|yes|on)$/i.test(v);
 }
 
+function oneOf<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
+  const v = str(name);
+  if (v === undefined) return fallback;
+  if (!(allowed as readonly string[]).includes(v)) {
+    throw new Error(`config: invalid ${name}=${JSON.stringify(v)}; expected one of: ${allowed.join(", ")}`);
+  }
+  return v as T;
+}
+
 export type SandboxResources = NonNullable<CreateFromSnapshotConfig["resources"]>;
+
+const SANDBOX_RESOURCES = [
+  "1x2", "2x4", "3x6", "4x8", "5x10", "6x12",
+  "7x14", "8x16", "9x18", "10x20", "11x22", "12x24", "CUSTOM",
+] as const satisfies readonly SandboxResources[];
+
+function resourceSpec(name: string, fallback: SandboxResources): SandboxResources {
+  return oneOf(name, SANDBOX_RESOURCES, fallback);
+}
+
+type TunnelRegion = NonNullable<CreateFromSnapshotConfig["endpoints"]>[number]["region"];
 
 export const BETA = str("ANTHROPIC_BETA") ?? "managed-agents-2026-04-01";
 
@@ -69,7 +90,7 @@ export const CONFIG = {
 
   // Orchestrator
   orchPort: num("ORCH_PORT", 8080),
-  orchestratorResources: (str("ORCHESTRATOR_RESOURCES") ?? "1x2") as SandboxResources,
+  orchestratorResources: resourceSpec("ORCHESTRATOR_RESOURCES", "1x2"),
   dispatcherDebounceMs: num("DISPATCHER_DEBOUNCE_MS", 250),
   dispatcherPollBlockMs: num("DISPATCHER_POLL_BLOCK_MS", 999),
   dispatcherReclaimMs: num("DISPATCHER_RECLAIM_MS", 30000),
@@ -81,8 +102,8 @@ export const CONFIG = {
   pollerEnabled: bool("POLLER_ENABLED", true),
 
   // Buddy connection
-  region: (str("BUDDY_REGION") ?? "US") as Region,
-  tunnelRegion: (str("BUDDY_TUNNEL_REGION") ?? "US") as "US" | "EU" | "AS",
+  region: oneOf<Region>("BUDDY_REGION", Object.values(REGIONS), "US"),
+  tunnelRegion: oneOf<TunnelRegion>("BUDDY_TUNNEL_REGION", ["US", "EU", "AS"] as const, "US"),
 
   // Optional Anthropic overrides
   baseUrl: str("ANTHROPIC_BASE_URL"),
