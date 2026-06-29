@@ -236,11 +236,10 @@ export class Dispatcher {
       }
     }
 
-    let failures = 0;
-    for (const work of newest.values()) {
-      const ok = await this.dispatchWorkItem(work, preparedWorkers.get(work.data.id));
-      if (!ok) failures++;
-    }
+    const results = await Promise.all(
+      [...newest.values()].map((work) => this.dispatchWorkItem(work, preparedWorkers.get(work.data.id))),
+    );
+    const failures = results.filter((ok) => !ok).length;
     log.info("drain complete", { claimed: claimed.length, dispatched: newest.size, failures });
     return failures === 0;
   }
