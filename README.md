@@ -6,8 +6,6 @@ work queue. Buddy runs the execution layer: one **orchestrator** sandbox (contro
 plane) and one **worker** sandbox per session that runs the built-in CMA toolset
 via the `ant beta:worker run` CLI.
 
-This mirrors the `blaxel/`, `daytona/`, and `vercel/` cookbooks in this repo, in
-TypeScript, on Buddy primitives.
 
 ## How it works
 
@@ -38,7 +36,7 @@ See [GUIDE.md](./GUIDE.md) for architecture, lifecycle states, and the security 
 
 ## Trigger mode: webhook or polling
 
-Like the `daytona/` cookbook, the orchestrator supports two triggers, selected
+The orchestrator supports two triggers, selected
 with `TRIGGER_MODE` in `.env` (default `webhook`). Both modes share the same
 sandbox lifecycle, dispatcher, and janitor — only how work is discovered differs.
 
@@ -135,8 +133,7 @@ npm run typecheck
 
 ## Credential boundary
 
-Buddy has no firewall credential brokering (unlike Vercel/Cloudflare), so the
-worker receives `ANTHROPIC_ENVIRONMENT_KEY` as an encrypted sandbox variable.
+The worker receives `ANTHROPIC_ENVIRONMENT_KEY` as an encrypted sandbox variable.
 Mitigation: only the **scoped, revocable** environment key reaches the worker —
 never the admin `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`.
 
