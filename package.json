@@ -28,13 +28,13 @@
     "@buddy-works/sandbox-sdk": "0.1.7",
     "@inquirer/prompts": "8.5.2",
     "dotenv": "16.4.7",
-    "fastify": "5.2.0"
+    "fastify": "5.10.0"
   },
   "devDependencies": {
-    "@types/node": "22.10.0",
-    "tsx": "4.19.2",
+    "@types/node": "22.20.1",
+    "tsx": "4.23.1",
     "typescript": "5.7.2",
-    "vitest": "3.0.0"
+    "vitest": "3.2.7"
   },
   "packageManager": "pnpm@11.7.0+sha512.19cc852c120c7125760f2443ee6be0ca5b40f9f50598de1a09a1f177503e010e57c23c77646e01e761de59bf874fb22a3398c33ab9691fc13eb946b6f0f4d620"
 }
