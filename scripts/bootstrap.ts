@@ -291,7 +291,7 @@ export interface VarSpec {
 export function buddyTokenUrl(region: string | undefined): string {
   switch (region) {
     case "EU": return "https://eu.buddy.works/api-tokens/add";
-    case "AP": return "https://asia.buddy.works/api-tokens/add";
+    case "AS": return "https://asia.buddy.works/api-tokens/add";
     default: return "https://app.buddy.works/api-tokens/add";
   }
 }
@@ -327,7 +327,7 @@ const PREREQS: VarSpec[] = [
     choices: [
       { name: "US", value: "US" },
       { name: "EU", value: "EU" },
-      { name: "Asia", value: "AP" },
+      { name: "Asia", value: "AS" },
     ],
   },
   {
