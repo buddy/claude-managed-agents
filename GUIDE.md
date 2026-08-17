@@ -137,9 +137,34 @@ process env, where the agent's `bash` can read it. Therefore:
 - Before production: review egress, key rotation, and log retention for your
   trust boundary.
 
+## Upgrading the `ant` CLI
+
+`ANT_VERSION` is baked into the base snapshot at build time, so raising it in
+`.env` does nothing to an existing install on its own: `npm run bootstrap` skips
+the snapshot step whenever `BUDDY_BASE_SNAPSHOT_ID` is already set, and the
+orchestrator creates workers from whatever snapshot id it was deployed with.
+
+```bash
+npm run build-snapshot        # prints a new BUDDY_BASE_SNAPSHOT_ID
+# replace BUDDY_BASE_SNAPSHOT_ID in .env with the printed id
+npm run deploy-orchestrator   # pushes the new id into the orchestrator's variables
+```
+
+- No `teardown` and no downtime — `deploy-orchestrator` refreshes an existing
+  orchestrator's variables in place and restarts the app.
+- Workers are per-session, so **new sessions** are born from the new snapshot
+  right away. A session that already has a worker stays on the old `ant`; the
+  image is fixed when the sandbox is created.
+- Those older workers need no manual cleanup. The janitor destroys a worker once
+  its session is terminated/archived/missing and reaps STOPPED ones after
+  `MAX_IDLE_DAYS`. Reach for `npm run teardown` only to force every session onto
+  the new `ant` at once — it also destroys the orchestrator and cuts off
+  in-flight tool execution.
+
 ## Known caveats (validate in your workspace)
 
-- `ant` release tag / asset naming — pin `ANT_VERSION` to a current release.
+- `ant` release tag / asset naming — pin `ANT_VERSION` to a current release and
+  rebuild the snapshot (see [Upgrading the `ant` CLI](#upgrading-the-ant-cli)).
 - Keep `WORKER_IDLE_TIMEOUT_SEC` well above expected idle gaps so a quiet `ant`
   run is not stopped mid-session (`ant --max-idle` should be the stop signal).
 - The orchestrator relies on `timeout` being omitted (not `0`) plus the
