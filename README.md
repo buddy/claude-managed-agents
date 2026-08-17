@@ -156,3 +156,7 @@ npm run teardown   # destroys cma-orchestrator and all cma-worker-* sandboxes
 ```
 
 Snapshots are left in place — delete them from the Buddy dashboard if desired.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
