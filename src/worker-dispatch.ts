@@ -179,7 +179,7 @@ export class Dispatcher {
   /**
    * Claim all currently-queued work and hand each item to its session sandbox.
    * Serialized via a promise-chain mutex. Keeps only the newest work item per
-   * session and force-stops the rest (mirrors daytona's by-session collapse).
+   * session and force-stops the rest.
    */
   async drainAndDispatch(preparedWorkers?: Map<string, SandboxLike>): Promise<boolean> {
     const run = this.drainChain.then(() => this.drainOnce(preparedWorkers ?? new Map()));

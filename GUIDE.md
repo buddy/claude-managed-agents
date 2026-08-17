@@ -66,10 +66,10 @@ heartbeat, the session event stream, tool execution, and the work stop.
 - **Idle timeout set after creation.** `createFromSnapshot` does not accept
   `timeout`, so `ensureWorker` sets `WORKER_IDLE_TIMEOUT_SEC` via `update()`
   right after creating the worker.
-- **Tags are the janitor's source of truth** (`src/tags.ts`), the analog of
-  Daytona's labels: `cma`, `cma-env:<id>`, `cma-session:<id>`, `cma-work:<id>`,
-  `cma-stopped-at:<iso>`. `Sandbox.list()` omits tags, so the janitor filters by
-  the `cma-worker-` identifier prefix, then `getById` to read tags.
+- **Tags are the janitor's source of truth** (`src/tags.ts`): `cma`,
+  `cma-env:<id>`, `cma-session:<id>`, `cma-work:<id>`, `cma-stopped-at:<iso>`.
+  `Sandbox.list()` omits tags, so the janitor filters by the `cma-worker-`
+  identifier prefix, then `getById` to read tags.
 - **Runner-alive probe** (`src/runner-probe.ts`): Buddy has no per-process RPC,
   so "alive" = some `listCommands()` entry whose text contains
   `ant beta:worker run` is still `INPROGRESS` (we can't stamp a custom command
@@ -124,9 +124,9 @@ double-dispatch.
 
 ## Security boundaries
 
-Buddy does not inject credentials at a network firewall (unlike Vercel's brokered
-model or Cloudflare egress). The environment key is decrypted into the worker's
-process env, where the agent's `bash` can read it. Therefore:
+Buddy does not inject credentials into the worker's outbound requests — no egress
+proxy or firewall holds them on its behalf. The environment key is decrypted into
+the worker's process env, where the agent's `bash` can read it. Therefore:
 
 - Workers receive only the scoped, revocable `ANTHROPIC_ENVIRONMENT_KEY` — never
   the admin `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`.
