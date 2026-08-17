@@ -124,7 +124,7 @@ npm run typecheck
 | Var | Meaning |
 | --- | --- |
 | `TRIGGER_MODE` | `webhook` (default) or `polling` — how the orchestrator discovers queued work. |
-| `ANT_VERSION` | `ant` CLI release baked into the base snapshot (default `1.10.0`). |
+| `ANT_VERSION` | `ant` CLI release baked into the base snapshot (default `1.23.0`). |
 | `ANT_MAX_IDLE` | `ant beta:worker run --max-idle` — primary stop signal. |
 | `WORKER_IDLE_TIMEOUT_SEC` | Buddy per-worker idle auto-stop; must exceed idle gaps. |
 | `MAX_IDLE_DAYS` | Janitor deletes STOPPED workers older than this (`0` disables). |
