@@ -14,6 +14,8 @@ import { errLabel } from "../src/util.js";
 // Runs as the `buddy` user (passwordless sudo). `dpkg --print-architecture`
 // yields amd64/arm64, which is verbatim how the published assets are named
 // (`ant_<version>_linux_<arch>.tar.gz`), so no arch translation table is needed.
+// Verified against the v1.23.0 release assets; re-check both when bumping
+// ANT_VERSION (see GUIDE.md, "Upgrading the `ant` CLI").
 const ANT_INSTALL = [
   "set -eux",
   'ARCH="$(dpkg --print-architecture)"',

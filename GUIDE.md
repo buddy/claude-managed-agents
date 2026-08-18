@@ -151,30 +151,47 @@ That directory is plain sandbox storage: nothing is mounted, and no worker share
 it with the orchestrator or with another session. Files therefore move in and out
 only through Buddy's file API, and nothing is copied out for you.
 
-The worker identifier is derived from the session id, so any holder of
-`BUDDY_TOKEN` can reach a session's workspace without going through the
-orchestrator:
+The worker identifier is derived from the session id, so anything holding the
+**workspace** token can reach a session's workspace without going through the
+orchestrator (a sandbox's own auto-injected `BUDDY_TOKEN` cannot — it is scoped to
+managing that one sandbox):
 
 ```ts
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
 import { buddyConnection } from "./src/clients.js";
+import { CONFIG } from "./src/config.js";
 import { workerIdentifier } from "./src/naming.js";
 
+const dir = CONFIG.workspaceDir;
+
+// Assumes the session's worker already exists and is RUNNING — see below.
 const sb = await Sandbox.getByIdentifier(workerIdentifier(sessionId), {
   connection: buddyConnection(),
 });
 
-await sb.fs.uploadFile(Buffer.from(csv), "/workspace/input.csv"); // stage an input
-const produced = await sb.fs.listFiles("/workspace");             // see what came out
-const report = await sb.fs.downloadFile("/workspace/report.pdf"); // collect it
+await sb.fs.uploadFile(Buffer.from(csv), `${dir}/input.csv`); // stage an input
+const produced = await sb.fs.listFiles(dir);                  // see what came out
+const report = await sb.fs.downloadFile(`${dir}/report.pdf`); // collect it
 ```
 
-Derive the name with `workerIdentifier()` instead of building it by hand — session
-ids are sanitized and length-bounded (`src/naming.ts`). And since `bash` is not
-confined to the workdir, listing `/workspace` reflects a convention rather than a
-guarantee: agree an output path with the agent instead of assuming everything it
-produces lands there.
+Two preconditions that bare `getByIdentifier` does not cover, and that
+`ensureWorker` (`src/worker-dispatch.ts:86`) exists to handle — reuse it rather
+than reimplementing either:
+
+- **The worker is created lazily.** It does not exist until the session's first
+  work item is dispatched, so `getByIdentifier` raises not-found before then;
+  `ensureWorker` catches that and creates from the base snapshot.
+- **The worker idle-stops.** Buddy stops it `WORKER_IDLE_TIMEOUT_SEC` after it
+  goes quiet (default 900s), and a stopped sandbox has to be started before its
+  filesystem is reachable; `ensureWorker` does that too.
+
+Derive the name with `workerIdentifier()` and the path from `CONFIG.workspaceDir`
+rather than building either by hand — session ids are sanitized and length-bounded
+(`src/naming.ts`), and the workdir is `WORKSPACE_DIR`, which the dispatch command
+already reads from config. Since `bash` is not confined to the workdir, listing it
+reflects a convention rather than a guarantee: agree an output path with the agent
+instead of assuming everything it produces lands there.
 
 ### Carrying the pointers in session metadata
 
@@ -196,15 +213,17 @@ const session = await anthropic.beta.sessions.create({
 ```
 
 Metadata values are strings, so pass paths, URLs, ids, or a JSON blob. **A claimed
-work item does not carry the session's metadata** — only the session id — so
-reading it costs one `sessions.retrieve(sessionId)`. The seam for that is the
-pre-ready step: `startup()` calls `ensureWorker()` (`src/orchestrator.ts:80`) to
-bring a session's sandbox up *before* work is claimed, which is where a
-retrieve-fetch-upload belongs — the files are in place by the time `ant` starts.
-**This control plane reads none of it**: `src/types.ts` narrows `SessionLike` to
-`status` and `archived_at`, so wiring the convention means widening that type and
-adding the staging step. For fixtures every session needs, bake them into the base
-snapshot instead and skip the round trip.
+work item does not carry the session's metadata**, only the session id, so reading
+it costs one `sessions.retrieve(sessionId)` — and a field on `SessionLike`, which
+`src/types.ts` narrows to `status` and `archived_at`. The seam for a
+retrieve-fetch-upload is `dispatchWorkItem`, between `ensureWorker()` and the
+`runCommand()` that launches `ant` (`src/worker-dispatch.ts:138`–`150`): every
+session funnels through it under both trigger modes, so it is the only point
+guaranteed to run before `ant` starts. The webhook path's pre-ready step
+(`scheduleDispatch`, `src/orchestrator.ts:80`) is not that point — it warms only
+the session named in the webhook, and polling mode never calls it. For fixtures
+every session needs, bake them into the base snapshot instead and skip the round
+trip.
 
 Two rules follow from the lifecycle:
 
@@ -212,10 +231,11 @@ Two rules follow from the lifecycle:
   environments the session's system prompt omits the `/mnt/session/outputs`
   instruction, so the agent writes final artifacts under `--workdir` by default —
   but no Files API captures them, so they stay there until something pulls them.
-- **Deliverables die with the worker.** The janitor destroys the sandbox once its
-  session is terminated, archived, or missing, and reaps STOPPED ones after
-  `MAX_IDLE_DAYS` — and `npm run teardown` removes them immediately. Download
-  before terminating the session.
+- **Deliverables die with the worker, in stages.** The sandbox idle-stops first
+  (`WORKER_IDLE_TIMEOUT_SEC`), which only means you must start it before reading
+  the files. It is *destroyed* once the janitor sees the session terminated,
+  archived, or missing, reaped after `MAX_IDLE_DAYS` in STOPPED, or removed
+  immediately by `npm run teardown`. Collect before any of those three.
 
 Two platform features do not apply here at all: `memory_store` session resources
 and vault `environment_variable` credentials are cloud-only, the latter because
@@ -235,11 +255,24 @@ npm run build-snapshot        # prints a new BUDDY_BASE_SNAPSHOT_ID
 npm run deploy-orchestrator   # pushes the new id into the orchestrator's variables
 ```
 
-- No `teardown` and no downtime — `deploy-orchestrator` refreshes an existing
-  orchestrator's variables in place and restarts the app.
+- No `teardown` needed, but the restart is not free: `deploy-orchestrator`
+  refreshes an existing orchestrator's variables in place and then calls
+  `restart()`, so the HTTP endpoint is down for that plus `npm install` and the
+  `tsx` boot. Brief, but real. In webhook mode a delivery that lands in that
+  window is recovered by the safety-net poll loop, so keep `POLLER_ENABLED=true`
+  across a redeploy — the janitor cannot cover it, since it reconciles existing
+  workers and a session that never got one is invisible to it.
 - Workers are per-session, so **new sessions** are born from the new snapshot
   right away. A session that already has a worker stays on the old `ant`; the
   image is fixed when the sandbox is created.
+- **Re-check the CLI surface, not just the version.** Diff
+  `ant beta:worker run --help` against what the dispatcher emits — the
+  `--workdir` / `--max-idle` flags and the `ANTHROPIC_*` variables in
+  `workerVariables()`. A changed invocation does not fail loudly:
+  `runCommand({ detached: true })` returns as soon as Buddy accepts the string, so
+  dispatch reports success while `ant` exits on bad arguments, and the janitor
+  then re-dispatches that session every `JANITOR_SECONDS` forever. Identical from
+  1.10.0 through 1.23.0, so there is no drift to date.
 - Those older workers need no manual cleanup. The janitor destroys a worker once
   its session is terminated/archived/missing and reaps STOPPED ones after
   `MAX_IDLE_DAYS`. Reach for `npm run teardown` only to force every session onto
