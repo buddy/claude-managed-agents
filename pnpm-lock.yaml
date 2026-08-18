@@ -12,8 +12,8 @@ importers:
         specifier: https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz
         version: https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz(zod@4.3.5)
       '@buddy-works/sandbox-sdk':
-        specifier: 0.1.7
-        version: 0.1.7
+        specifier: 0.1.8
+        version: 0.1.8
       '@inquirer/prompts':
         specifier: 8.5.2
         version: 8.5.2(@types/node@22.20.1)
@@ -53,9 +53,9 @@ packages:
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
-  '@buddy-works/sandbox-sdk@0.1.7':
-    resolution: {integrity: sha512-3yboyWz5x+BD93pRV3BYRE010RNcp/r0YIY+NXFsxTjiu+6FCEhZZwzQVcoYr4KLdT7DFsRqZ9zjdgEzeBOn0w==}
-    engines: {node: '>=20'}
+  '@buddy-works/sandbox-sdk@0.1.8':
+    resolution: {integrity: sha512-gkgmVDJYkM3IzxtNHOy3FWxuAsDaZQz0Pjm9qXTL12leZTnZAPunTAJxs/B86dwcWLLNPBU85lu32pui1YB57Q==}
+    engines: {node: ^20.19.0 || >=22.12.0}
 
   '@esbuild/aix-ppc64@0.28.1':
     resolution: {integrity: sha512-Svl7tq8k/08+p6CXPpRjQ1fKX+1odH/BQbb48fV6fj3CWHhsoIOoY87w1oHXm0qEpkIK3ZfVgp0hed3XBXzXMQ==}
@@ -999,7 +999,7 @@ snapshots:
 
   '@babel/runtime@7.29.7': {}
 
-  '@buddy-works/sandbox-sdk@0.1.7':
+  '@buddy-works/sandbox-sdk@0.1.8':
     dependencies:
       p-retry: 7.1.1
       zod: 4.3.5

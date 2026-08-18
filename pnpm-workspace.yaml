@@ -1,4 +1,6 @@
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@buddy-works/sandbox-sdk@0.1.8'
 onlyBuiltDependencies:
   - esbuild
