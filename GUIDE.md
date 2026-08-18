@@ -124,9 +124,10 @@ double-dispatch.
 
 ## Security boundaries
 
-Buddy does not inject credentials into the worker's outbound requests — no egress
-proxy or firewall holds them on its behalf. The environment key is decrypted into
-the worker's process env, where the agent's `bash` can read it. Therefore:
+Buddy does not inject credentials into a worker's outbound requests — no egress
+proxy or firewall holds them on the worker's behalf. The environment key is
+decrypted into the worker's process env, where the agent's `bash` can read it.
+Therefore:
 
 - Workers receive only the scoped, revocable `ANTHROPIC_ENVIRONMENT_KEY` — never
   the admin `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`.
