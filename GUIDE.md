@@ -137,6 +137,90 @@ the worker's process env, where the agent's `bash` can read it. Therefore:
 - Before production: review egress, key rotation, and log retention for your
   trust boundary.
 
+## Staging inputs and collecting deliverables
+
+Self-hosted environments have no `/mnt/session/outputs`. A worker is an ordinary
+`ubuntu:24.04` sandbox, and `--workdir` (`WORKSPACE_DIR`, default `/workspace`) is
+just a directory `scripts/build-snapshot.ts` creates inside it — the place the
+agent's file tools are pointed by default, not a boundary. `ant` is explicit that
+the workdir check guards the file tools only and that `bash` ignores it, so treat
+the whole sandbox filesystem as reachable.
+
+That directory is plain sandbox storage: nothing is mounted, and no worker shares
+it with the orchestrator or with another session. Files therefore move in and out
+only through Buddy's file API, and nothing is copied out for you.
+
+The worker identifier is derived from the session id, so any holder of
+`BUDDY_TOKEN` can reach a session's workspace without going through the
+orchestrator:
+
+```ts
+import { Sandbox } from "@buddy-works/sandbox-sdk";
+
+import { buddyConnection } from "./src/clients.js";
+import { workerIdentifier } from "./src/naming.js";
+
+const sb = await Sandbox.getByIdentifier(workerIdentifier(sessionId), {
+  connection: buddyConnection(),
+});
+
+await sb.fs.uploadFile(Buffer.from(csv), "/workspace/input.csv"); // stage an input
+const produced = await sb.fs.listFiles("/workspace");             // see what came out
+const report = await sb.fs.downloadFile("/workspace/report.pdf"); // collect it
+```
+
+Derive the name with `workerIdentifier()` instead of building it by hand — session
+ids are sanitized and length-bounded (`src/naming.ts`). And since `bash` is not
+confined to the workdir, listing `/workspace` reflects a convention rather than a
+guarantee: agree an output path with the agent instead of assuming everything it
+produces lands there.
+
+### Carrying the pointers in session metadata
+
+Self-hosted environments do not mount `file` or `github_repository` resources, and
+this is enforced rather than merely unimplemented: a session that includes **any**
+`resources` entry on a self-hosted environment is rejected. Staging is the control
+plane's job here, and the documented division of labour is that the caller passes
+**pointers** in the session's `metadata` map, which the orchestrator resolves into
+the workdir **before dispatch**.
+
+```ts
+// caller side: name what the run needs, not the payload
+const session = await anthropic.beta.sessions.create({
+  agent: agentId,
+  environment_id: environmentId,
+  metadata: { inputs: "s3://bucket/input.csv", deliverable: "/workspace/report.pdf" },
+  betas: [CONFIG.beta],
+});
+```
+
+Metadata values are strings, so pass paths, URLs, ids, or a JSON blob. **A claimed
+work item does not carry the session's metadata** — only the session id — so
+reading it costs one `sessions.retrieve(sessionId)`. The seam for that is the
+pre-ready step: `startup()` calls `ensureWorker()` (`src/orchestrator.ts:80`) to
+bring a session's sandbox up *before* work is claimed, which is where a
+retrieve-fetch-upload belongs — the files are in place by the time `ant` starts.
+**This control plane reads none of it**: `src/types.ts` narrows `SessionLike` to
+`status` and `archived_at`, so wiring the convention means widening that type and
+adding the staging step. For fixtures every session needs, bake them into the base
+snapshot instead and skip the round trip.
+
+Two rules follow from the lifecycle:
+
+- **Deliverables land in the workdir, and nothing collects them.** On self-hosted
+  environments the session's system prompt omits the `/mnt/session/outputs`
+  instruction, so the agent writes final artifacts under `--workdir` by default —
+  but no Files API captures them, so they stay there until something pulls them.
+- **Deliverables die with the worker.** The janitor destroys the sandbox once its
+  session is terminated, archived, or missing, and reaps STOPPED ones after
+  `MAX_IDLE_DAYS` — and `npm run teardown` removes them immediately. Download
+  before terminating the session.
+
+Two platform features do not apply here at all: `memory_store` session resources
+and vault `environment_variable` credentials are cloud-only, the latter because
+egress is yours, so there is no Anthropic-managed hop at which a secret could be
+substituted.
+
 ## Upgrading the `ant` CLI
 
 `ANT_VERSION` is baked into the base snapshot at build time, so raising it in
