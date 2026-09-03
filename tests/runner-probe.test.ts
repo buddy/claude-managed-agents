@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ANT_RUN_MARKER, isRunnerAlive } from "../src/runner-probe.js";
-import type { SandboxLike } from "../src/types.js";
+import { ANT_RUN_MARKER, isRunnerAlive } from "../src/runner-probe.ts";
+import type { SandboxLike } from "../src/types.ts";
 
 function sandboxWithCommands(commands: Array<{ command?: string; status?: string }>): SandboxLike {
   return {

@@ -6,33 +6,31 @@
   "description": "Self-hosted Claude Managed Agents control plane on Buddy Sandboxes",
   "license": "MIT",
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=23.5.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "tsx src/orchestrator.ts",
-    "bootstrap": "tsx scripts/bootstrap.ts",
-    "create-environment": "tsx scripts/create-environment.ts",
-    "create-agent": "tsx scripts/create-agent.ts",
-    "build-snapshot": "tsx scripts/build-snapshot.ts",
-    "deploy-orchestrator": "tsx scripts/deploy-orchestrator.ts",
-    "set-webhook": "tsx scripts/set-webhook.ts",
-    "orchestrator-logs": "tsx scripts/orchestrator-logs.ts",
-    "teardown": "tsx scripts/teardown.ts",
-    "session": "tsx example/run-session.ts"
+    "start": "node src/orchestrator.ts",
+    "bootstrap": "node scripts/bootstrap.ts",
+    "create-environment": "node scripts/create-environment.ts",
+    "create-agent": "node scripts/create-agent.ts",
+    "build-snapshot": "node scripts/build-snapshot.ts",
+    "deploy-orchestrator": "node scripts/deploy-orchestrator.ts",
+    "set-webhook": "node scripts/set-webhook.ts",
+    "orchestrator-logs": "node scripts/orchestrator-logs.ts",
+    "teardown": "node scripts/teardown.ts",
+    "session": "node example/run-session.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz",
     "@buddy-works/sandbox-sdk": "0.1.8",
     "@inquirer/prompts": "8.5.2",
-    "dotenv": "16.4.7",
     "fastify": "5.10.0"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
-    "tsx": "4.23.1",
     "typescript": "5.7.2",
     "vitest": "3.2.7"
   },

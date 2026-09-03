@@ -7,9 +7,9 @@
  */
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
-import { buddyConnection } from "../src/clients.js";
-import { isWorkerIdentifier, WORKER_PREFIX } from "../src/naming.js";
-import { errLabel } from "../src/util.js";
+import { buddyConnection } from "../src/clients.ts";
+import { isWorkerIdentifier, WORKER_PREFIX } from "../src/naming.ts";
+import { errLabel } from "../src/util.ts";
 
 const ORCH_IDENTIFIER = "cma-orchestrator";
 

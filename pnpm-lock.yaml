@@ -17,9 +17,6 @@ importers:
       '@inquirer/prompts':
         specifier: 8.5.2
         version: 8.5.2(@types/node@22.20.1)
-      dotenv:
-        specifier: 16.4.7
-        version: 16.4.7
       fastify:
         specifier: 5.10.0
         version: 5.10.0
@@ -27,9 +24,6 @@ importers:
       '@types/node':
         specifier: 22.20.1
         version: 22.20.1
-      tsx:
-        specifier: 4.23.1
-        version: 4.23.1
       typescript:
         specifier: 5.7.2
         version: 5.7.2
@@ -617,10 +611,6 @@ packages:
   dequal@2.0.3:
     resolution: {integrity: sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA==}
     engines: {node: '>=6'}
-
-  dotenv@16.4.7:
-    resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
-    engines: {node: '>=12'}
 
   es-module-lexer@1.7.0:
     resolution: {integrity: sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA==}
@@ -1408,8 +1398,6 @@ snapshots:
 
   dequal@2.0.3: {}
 
-  dotenv@16.4.7: {}
-
   es-module-lexer@1.7.0: {}
 
   esbuild@0.28.1:
@@ -1710,6 +1698,7 @@ snapshots:
       esbuild: 0.28.1
     optionalDependencies:
       fsevents: 2.3.3
+    optional: true
 
   typescript@5.7.2: {}
 

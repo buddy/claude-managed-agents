@@ -197,7 +197,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
 const ENV_PATH = join(ROOT, ".env");
 const ENV_EXAMPLE_PATH = join(ROOT, ".env.example");
-const TSX = join(ROOT, "node_modules", ".bin", "tsx");
 
 const ENV_ID = "ANTHROPIC_ENVIRONMENT_ID";
 const ENV_KEY = "ANTHROPIC_ENVIRONMENT_KEY";
@@ -519,14 +518,14 @@ async function ensureTriggerMode(env: Record<string, string>): Promise<void> {
 }
 
 /**
- * Run a cookbook script via tsx, capturing stdout silently (it's parsed for the
+ * Run a cookbook script under this same Node binary, capturing stdout silently (it's parsed for the
  * `KEY=value` line, not shown — the spinner narrates progress instead). stderr
  * streams through live, and on a non-zero exit the captured stdout is dumped so
  * failures stay debuggable.
  */
 function runScript(rel: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(TSX, [rel], { cwd: ROOT, env: process.env });
+    const child = spawn(process.execPath, [rel], { cwd: ROOT, env: process.env });
     let out = "";
     child.stdout.on("data", (d: Buffer) => {
       out += d.toString();

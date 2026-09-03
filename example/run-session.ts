@@ -16,9 +16,9 @@
  */
 import { input } from "@inquirer/prompts";
 
-import { anthropicAdminClient, BETA } from "../src/clients.js";
-import { requireAgentId, requireEnvironmentId } from "../src/config.js";
-import { errLabel } from "../src/util.js";
+import { anthropicAdminClient, BETA } from "../src/clients.ts";
+import { requireAgentId, requireEnvironmentId } from "../src/config.ts";
+import { errLabel } from "../src/util.ts";
 
 const TURN_TIMEOUT_MS = 180_000;
 const DEBUG = !!process.env.DEBUG; // DEBUG=1 npm run session -> logs every event

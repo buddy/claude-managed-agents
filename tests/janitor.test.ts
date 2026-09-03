@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { Janitor } from "../src/janitor.js";
-import { workerIdentifier } from "../src/naming.js";
-import { ANT_RUN_MARKER } from "../src/runner-probe.js";
-import { stoppedAtTag, TAG_MARKER } from "../src/tags.js";
-import type { CommandLike, SandboxData, SessionLike } from "../src/types.js";
-import { Dispatcher } from "../src/worker-dispatch.js";
-import { makeFakeAnthropic, makeFakeSandbox, makeFakeSandboxStatic, silentLogger, type FakeSandbox } from "./fixtures.js";
+import { Janitor } from "../src/janitor.ts";
+import { workerIdentifier } from "../src/naming.ts";
+import { ANT_RUN_MARKER } from "../src/runner-probe.ts";
+import { stoppedAtTag, TAG_MARKER } from "../src/tags.ts";
+import type { CommandLike, SandboxData, SessionLike } from "../src/types.ts";
+import { Dispatcher } from "../src/worker-dispatch.ts";
+import { makeFakeAnthropic, makeFakeSandbox, makeFakeSandboxStatic, silentLogger, type FakeSandbox } from "./fixtures.ts";
 
 const ENV = "env_test";
 

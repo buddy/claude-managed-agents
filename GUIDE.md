@@ -258,7 +258,7 @@ npm run deploy-orchestrator   # pushes the new id into the orchestrator's variab
 - No `teardown` needed, but the restart is not free: `deploy-orchestrator`
   refreshes an existing orchestrator's variables in place and then calls
   `restart()`, so the HTTP endpoint is down for that plus `npm install` and the
-  `tsx` boot. Brief, but real. In webhook mode a delivery that lands in that
+  Node boot. Brief, but real. In webhook mode a delivery that lands in that
   window is recovered by the safety-net poll loop, so keep `POLLER_ENABLED=true`
   across a redeploy — the janitor cannot cover it, since it reconciles existing
   workers and a session that never got one is invisible to it.

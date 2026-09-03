@@ -15,11 +15,11 @@ import { fileURLToPath } from "node:url";
 
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
-import { buddyConnection } from "../src/clients.js";
-import { CONFIG, requireBaseSnapshotId, requireEnv, requireEnvironmentId, requireEnvironmentKey, webhookSigningKey } from "../src/config.js";
-import { orchestratorTags } from "../src/tags.js";
-import type { VariableInput } from "../src/types.js";
-import { errLabel, sleep } from "../src/util.js";
+import { buddyConnection } from "../src/clients.ts";
+import { CONFIG, requireBaseSnapshotId, requireEnv, requireEnvironmentId, requireEnvironmentKey, webhookSigningKey } from "../src/config.ts";
+import { orchestratorTags } from "../src/tags.ts";
+import type { VariableInput } from "../src/types.ts";
+import { errLabel, sleep } from "../src/util.ts";
 
 const ORCH_IDENTIFIER = "cma-orchestrator";
 const REMOTE_DIR = "/opt/cma";
@@ -39,9 +39,7 @@ function runtimePackageJson(): Buffer {
     dependencies: {
       "@anthropic-ai/sdk": dev.dependencies["@anthropic-ai/sdk"],
       "@buddy-works/sandbox-sdk": dev.dependencies["@buddy-works/sandbox-sdk"],
-      dotenv: dev.dependencies["dotenv"],
       fastify: dev.dependencies["fastify"],
-      tsx: "^4.19.2",
     },
   };
   return Buffer.from(JSON.stringify(pkg, null, 2));
@@ -127,9 +125,9 @@ async function main(): Promise<void> {
   );
 
   // Configure the long-running app now that the files are in place.
-  console.log("configuring orchestrator app (npm install + tsx)...");
+  console.log("configuring orchestrator app (npm install + node)...");
   await sb.update({
-    apps: [{ command: `cd ${REMOTE_DIR} && npm install --no-audit --no-fund && npx tsx src/orchestrator.ts` }],
+    apps: [{ command: `cd ${REMOTE_DIR} && npm install --no-audit --no-fund && node src/orchestrator.ts` }],
   });
 
   // Restart so the orchestrator PROCESS picks up the latest source AND the

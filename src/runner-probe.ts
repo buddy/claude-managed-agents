@@ -8,7 +8,7 @@
  * (We can't stamp a custom command name — `runCommand` only accepts
  * `{ command, runtime }` — so we match on the command text.)
  */
-import type { CommandLike, SandboxLike } from "./types.js";
+import type { CommandLike, SandboxLike } from "./types.ts";
 
 export const ANT_RUN_MARKER = "ant beta:worker run";
 

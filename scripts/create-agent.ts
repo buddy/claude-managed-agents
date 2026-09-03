@@ -5,9 +5,9 @@
  *
  *   npm run create-agent
  */
-import { anthropicAdminClient, BETA } from "../src/clients.js";
-import { CONFIG } from "../src/config.js";
-import { errLabel } from "../src/util.js";
+import { anthropicAdminClient, BETA } from "../src/clients.ts";
+import { CONFIG } from "../src/config.ts";
+import { errLabel } from "../src/util.ts";
 
 const SANDBOX_TOOLS = ["bash", "read", "write", "edit", "glob", "grep"] as const;
 const WEB_TOOLS = ["web_fetch", "web_search"] as const;

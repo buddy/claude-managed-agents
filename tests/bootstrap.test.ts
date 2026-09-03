@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendExport, decide, extractValue, isPollingMode, maskSecret, mergeEnv, parseEnvText, requireValue, seedEnvFromExample } from "../scripts/bootstrap.js";
+import { appendExport, decide, extractValue, isPollingMode, maskSecret, mergeEnv, parseEnvText, requireValue, seedEnvFromExample } from "../scripts/bootstrap.ts";
 
 describe("parseEnvText", () => {
   it("tolerates export, quotes, and comments", () => {

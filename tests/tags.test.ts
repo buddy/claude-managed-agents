@@ -8,7 +8,7 @@ import {
   stoppedAtTag,
   withoutStoppedAtTag,
   workerTags,
-} from "../src/tags.js";
+} from "../src/tags.ts";
 
 describe("tags", () => {
   it("worker/orchestrator tags use only safe characters (no colons)", () => {

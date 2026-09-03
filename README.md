@@ -57,7 +57,7 @@ webhook secret; pick **webhook** for lower per-event latency. Switch by setting
 
 - Claude Managed Agents access and an `ANTHROPIC_API_KEY`.
 - A Buddy workspace + project and a `BUDDY_TOKEN` with sandbox permissions.
-- Node 20.19+ or 22.13+ (23.5+ and 24+ also work).
+- Node 24+.
 
 ```bash
 cd buddy

@@ -7,9 +7,9 @@
  */
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
-import { buddyConnection } from "../src/clients.js";
-import { CONFIG } from "../src/config.js";
-import { errLabel } from "../src/util.js";
+import { buddyConnection } from "../src/clients.ts";
+import { CONFIG } from "../src/config.ts";
+import { errLabel } from "../src/util.ts";
 
 // Runs as the `buddy` user (passwordless sudo). `dpkg --print-architecture`
 // yields amd64/arm64, which is verbatim how the published assets are named

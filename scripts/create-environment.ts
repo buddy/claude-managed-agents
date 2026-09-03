@@ -5,8 +5,8 @@
  *
  *   npm run create-environment
  */
-import { anthropicAdminClient, BETA } from "../src/clients.js";
-import { errLabel } from "../src/util.js";
+import { anthropicAdminClient, BETA } from "../src/clients.ts";
+import { errLabel } from "../src/util.ts";
 
 async function main(): Promise<void> {
   const client = anthropicAdminClient();

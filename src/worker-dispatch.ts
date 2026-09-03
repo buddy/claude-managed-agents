@@ -12,19 +12,19 @@
  */
 import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
 
-import { CONFIG } from "./config.js";
-import type { Logger } from "./log.js";
-import { workerIdentifier } from "./naming.js";
-import { ANT_RUN_MARKER } from "./runner-probe.js";
-import { workerTags } from "./tags.js";
+import { CONFIG } from "./config.ts";
+import type { Logger } from "./log.ts";
+import { workerIdentifier } from "./naming.ts";
+import { ANT_RUN_MARKER } from "./runner-probe.ts";
+import { workerTags } from "./tags.ts";
 import type {
   AnthropicLike,
   SandboxLike,
   SandboxStatic,
   VariableInput,
   WorkItem,
-} from "./types.js";
-import { errLabel, isNotFound, sleep, shellQuote } from "./util.js";
+} from "./types.ts";
+import { errLabel, isNotFound, sleep, shellQuote } from "./util.ts";
 
 export interface DispatcherDeps {
   anthropic: AnthropicLike;
@@ -48,7 +48,11 @@ export class Dispatcher {
   // Promise-chain mutex so concurrent drains (webhook + poller) don't interleave polls.
   private drainChain: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly deps: DispatcherDeps) {}
+  private readonly deps: DispatcherDeps;
+
+  constructor(deps: DispatcherDeps) {
+    this.deps = deps;
+  }
 
   /** Returns false if this work id is already being dispatched locally. */
   markInFlight(workId: string): boolean {

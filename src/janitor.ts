@@ -10,14 +10,14 @@
  */
 import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
 
-import { CONFIG } from "./config.js";
-import type { Logger } from "./log.js";
-import { isWorkerIdentifier } from "./naming.js";
-import { hasLiveAntRun, latestAntWorkId } from "./runner-probe.js";
-import { isManaged, parseStoppedAtMs, readVariable, stoppedAtTag, withoutStoppedAtTag } from "./tags.js";
-import type { AnthropicLike, CommandLike, SandboxLike, SandboxStatic } from "./types.js";
-import { errLabel, isNotFound, sleep } from "./util.js";
-import type { Dispatcher } from "./worker-dispatch.js";
+import { CONFIG } from "./config.ts";
+import type { Logger } from "./log.ts";
+import { isWorkerIdentifier } from "./naming.ts";
+import { hasLiveAntRun, latestAntWorkId } from "./runner-probe.ts";
+import { isManaged, parseStoppedAtMs, readVariable, stoppedAtTag, withoutStoppedAtTag } from "./tags.ts";
+import type { AnthropicLike, CommandLike, SandboxLike, SandboxStatic } from "./types.ts";
+import { errLabel, isNotFound, sleep } from "./util.ts";
+import type { Dispatcher } from "./worker-dispatch.ts";
 
 export interface JanitorDeps {
   anthropic: AnthropicLike;
@@ -31,7 +31,11 @@ export interface JanitorDeps {
 const DAY_MS = 86_400_000;
 
 export class Janitor {
-  constructor(private readonly deps: JanitorDeps) {}
+  private readonly deps: JanitorDeps;
+
+  constructor(deps: JanitorDeps) {
+    this.deps = deps;
+  }
 
   /** Force-stop the work item this sandbox was running (work id read from command text). */
   private async releaseInFlightWork(commands: CommandLike[]): Promise<void> {

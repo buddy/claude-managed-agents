@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isWorkerIdentifier, sanitize, WORKER_PREFIX, workerIdentifier } from "../src/naming.js";
+import { isWorkerIdentifier, sanitize, WORKER_PREFIX, workerIdentifier } from "../src/naming.ts";
 
 describe("sanitize", () => {
   it("lowercases and maps non [a-z0-9-] to hyphens", () => {

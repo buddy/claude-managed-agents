@@ -11,9 +11,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
 
-import { CONFIG, requireApiKey, requireEnvironmentKey } from "./config.js";
+import { CONFIG, requireApiKey, requireEnvironmentKey } from "./config.ts";
 
-export { BETA } from "./config.js";
+export { BETA } from "./config.ts";
 
 export function anthropicEnvClient(): Anthropic {
   return new Anthropic({

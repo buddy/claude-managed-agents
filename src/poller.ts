@@ -11,10 +11,10 @@
  * `drainAndDispatch` long-polls (block_ms) when the queue is empty, so the loop
  * is self-paced; the sleep is just a floor between drains.
  */
-import { CONFIG } from "./config.js";
-import type { Logger } from "./log.js";
-import { errLabel, sleep } from "./util.js";
-import type { Dispatcher } from "./worker-dispatch.js";
+import { CONFIG } from "./config.ts";
+import type { Logger } from "./log.ts";
+import { errLabel, sleep } from "./util.ts";
+import type { Dispatcher } from "./worker-dispatch.ts";
 
 export function startPollerLoop(
   dispatcher: Dispatcher,

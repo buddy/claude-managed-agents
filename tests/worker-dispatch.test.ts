@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { CONFIG } from "../src/config.js";
-import { workerIdentifier } from "../src/naming.js";
-import { ANT_RUN_MARKER, latestAntWorkId } from "../src/runner-probe.js";
-import { Dispatcher } from "../src/worker-dispatch.js";
+import { CONFIG } from "../src/config.ts";
+import { workerIdentifier } from "../src/naming.ts";
+import { ANT_RUN_MARKER, latestAntWorkId } from "../src/runner-probe.ts";
+import { Dispatcher } from "../src/worker-dispatch.ts";
 import {
   makeFakeAnthropic,
   makeFakeSandbox,
@@ -11,7 +11,7 @@ import {
   nonSessionWork,
   silentLogger,
   workItem,
-} from "./fixtures.js";
+} from "./fixtures.ts";
 
 function makeDispatcher(overrides: {
   anthropic?: ReturnType<typeof makeFakeAnthropic>;

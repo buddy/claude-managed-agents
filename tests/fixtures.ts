@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { Logger } from "../src/log.js";
+import type { Logger } from "../src/log.ts";
 import type {
   AnthropicLike,
   CommandLike,
@@ -10,7 +10,7 @@ import type {
   SandboxStatic,
   SessionLike,
   WorkItem,
-} from "../src/types.js";
+} from "../src/types.ts";
 
 export function silentLogger(): Logger {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn() };

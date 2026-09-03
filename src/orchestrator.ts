@@ -19,14 +19,14 @@ import {
   requireEnvironmentId,
   requireEnvironmentKey,
   webhookSigningKey,
-} from "./config.js";
-import { anthropicEnvClient, buddyConnection } from "./clients.js";
-import { Janitor, startJanitorLoop } from "./janitor.js";
-import { makeLogger } from "./log.js";
-import { startPollerLoop } from "./poller.js";
-import type { AnthropicLike, SandboxLike, SandboxStatic } from "./types.js";
-import { errLabel, sleep } from "./util.js";
-import { Dispatcher } from "./worker-dispatch.js";
+} from "./config.ts";
+import { anthropicEnvClient, buddyConnection } from "./clients.ts";
+import { Janitor, startJanitorLoop } from "./janitor.ts";
+import { makeLogger } from "./log.ts";
+import { startPollerLoop } from "./poller.ts";
+import type { AnthropicLike, SandboxLike, SandboxStatic } from "./types.ts";
+import { errLabel, sleep } from "./util.ts";
+import { Dispatcher } from "./worker-dispatch.ts";
 
 const log = makeLogger("orchestrator");
 

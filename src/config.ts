@@ -1,14 +1,19 @@
 /**
- * Central, typed configuration. Importing this loads `.env` (via dotenv) once.
+ * Central, typed configuration. Importing this loads `.env` once, via Node's
+ * built-in loader.
  *
  * Tunables resolve eagerly with safe defaults so this module is import-safe in
  * tests. Secrets/ids are exposed as `require*()` functions that throw a clear
  * error only when actually needed, so unit tests never need real credentials.
  */
-import "dotenv/config";
-
 import { REGIONS } from "@buddy-works/sandbox-sdk";
 import type { CreateFromSnapshotConfig, Region } from "@buddy-works/sandbox-sdk";
+
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env — read straight from the environment
+}
 
 function str(name: string): string | undefined {
   const v = process.env[name];

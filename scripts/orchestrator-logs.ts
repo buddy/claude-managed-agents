@@ -8,8 +8,8 @@
  */
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
-import { buddyConnection } from "../src/clients.js";
-import { errLabel } from "../src/util.js";
+import { buddyConnection } from "../src/clients.ts";
+import { errLabel } from "../src/util.ts";
 
 const ORCH_IDENTIFIER = "cma-orchestrator";
 const EXPECTED_VARS = [
