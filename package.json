@@ -1,6 +1,6 @@
 {
   "name": "cma-buddy-sandboxes",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted Claude Managed Agents control plane on Buddy Sandboxes",
