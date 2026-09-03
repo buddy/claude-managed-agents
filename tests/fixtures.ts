@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import type { MockedFunction } from "vitest";
 
 import type { Logger } from "../src/log.ts";
 import type {
@@ -32,12 +33,12 @@ export function nonSessionWork(id: string): WorkItem {
 export interface FakeSandbox extends SandboxLike {
   data: SandboxData;
   commands: CommandLike[];
-  start: ReturnType<typeof vi.fn>;
-  destroy: ReturnType<typeof vi.fn>;
-  refresh: ReturnType<typeof vi.fn>;
-  update: ReturnType<typeof vi.fn>;
-  runCommand: ReturnType<typeof vi.fn>;
-  listCommands: ReturnType<typeof vi.fn>;
+  start: MockedFunction<SandboxLike["start"]>;
+  destroy: MockedFunction<SandboxLike["destroy"]>;
+  refresh: MockedFunction<SandboxLike["refresh"]>;
+  update: MockedFunction<SandboxLike["update"]>;
+  runCommand: MockedFunction<SandboxLike["runCommand"]>;
+  listCommands: MockedFunction<SandboxLike["listCommands"]>;
 }
 
 export function makeFakeSandbox(data: SandboxData, commands: CommandLike[] = []): FakeSandbox {
