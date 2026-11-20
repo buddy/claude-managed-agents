@@ -112,7 +112,7 @@ export const CONFIG = {
 
   // Optional Anthropic overrides
   baseUrl: str("ANTHROPIC_BASE_URL"),
-  agentModel: str("ANTHROPIC_AGENT_MODEL") ?? "claude-opus-4-8",
+  agentModel: str("ANTHROPIC_AGENT_MODEL") ?? "claude-opus-5-5",
 } as const;
 
 // Required-on-demand accessors (throw with a clear message if unset).
