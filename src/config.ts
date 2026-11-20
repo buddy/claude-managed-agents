@@ -87,7 +87,7 @@ export const CONFIG = {
   triggerMode: triggerMode(),
 
   // Worker runtime
-  antVersion: str("ANT_VERSION") ?? "1.23.0",
+  antVersion: str("ANT_VERSION") ?? "2.11.0",
   antMaxIdle: str("ANT_MAX_IDLE") ?? "60s",
   workerResources: (str("WORKER_RESOURCES") ?? "2x4") as SandboxResources,
   workerIdleTimeoutSec: num("WORKER_IDLE_TIMEOUT_SEC", 900),

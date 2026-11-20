@@ -143,9 +143,9 @@ Therefore:
 Self-hosted environments have no `/mnt/session/outputs`. A worker is an ordinary
 `ubuntu:24.04` sandbox, and `--workdir` (`WORKSPACE_DIR`, default `/workspace`) is
 just a directory `scripts/build-snapshot.ts` creates inside it — the place the
-agent's file tools are pointed by default, not a boundary. `ant` is explicit that
-the workdir check guards the file tools only and that `bash` ignores it, so treat
-the whole sandbox filesystem as reachable.
+agent's file tools are pointed by default, not a boundary. The workdir check
+guards the file tools only; `bash` is not confined to it, so treat the whole
+sandbox filesystem as reachable.
 
 That directory is plain sandbox storage: nothing is mounted, and no worker shares
 it with the orchestrator or with another session. Files therefore move in and out
@@ -237,10 +237,14 @@ Two rules follow from the lifecycle:
   archived, or missing, reaped after `MAX_IDLE_DAYS` in STOPPED, or removed
   immediately by `npm run teardown`. Collect before any of those three.
 
-Two platform features do not apply here at all: `memory_store` session resources
-and vault `environment_variable` credentials are cloud-only, the latter because
-egress is yours, so there is no Anthropic-managed hop at which a secret could be
-substituted.
+Two platform features do not work here. Vault `environment_variable` credentials
+are cloud-only, because egress is yours, so there is no Anthropic-managed hop at
+which a secret could be substituted. `memory_store` session resources need a
+per-work-item sessions token: `ant` mounts memory stores only with the work
+item's secret (`--work-secret-file`), and the memory endpoints reject the
+environment key. The dispatcher passes only the environment key, so `ant` fails
+the work item of a session that has a memory store attached instead of running
+it. Don't attach memory stores to sessions in this environment.
 
 ## Upgrading the `ant` CLI
 
@@ -271,8 +275,10 @@ npm run deploy-orchestrator   # pushes the new id into the orchestrator's variab
   `workerVariables()`. A changed invocation does not fail loudly:
   `runCommand({ detached: true })` returns as soon as Buddy accepts the string, so
   dispatch reports success while `ant` exits on bad arguments, and the janitor
-  then re-dispatches that session every `JANITOR_SECONDS` forever. Identical from
-  1.10.0 through 1.23.0, so there is no drift to date.
+  then re-dispatches that session every `JANITOR_SECONDS` forever. What the
+  dispatcher emits works unchanged from 1.10.0 through 2.11.0. 2.x changed the
+  surface around it: `--unrestricted-paths` is gone (passing it is now an
+  error), `--environment-key` became optional, and `--work-secret-file` is new.
 - Those older workers need no manual cleanup. The janitor destroys a worker once
   its session is terminated/archived/missing and reaps STOPPED ones after
   `MAX_IDLE_DAYS`. Reach for `npm run teardown` only to force every session onto
