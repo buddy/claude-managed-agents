@@ -6,8 +6,9 @@
   `@buddy-works/sandbox-sdk` for all sandbox management, installed from npm.
 - **Two Anthropic credentials, never mixed:** the admin `ANTHROPIC_API_KEY` is
   LOCAL only (create-environment/agent/session). The scoped
-  `ANTHROPIC_ENVIRONMENT_KEY` is what the orchestrator and workers use. Never put
-  the admin key or `BUDDY_TOKEN` on a worker.
+  `ANTHROPIC_ENVIRONMENT_KEY` is what the orchestrator uses. Workers get only the
+  per-run work item secret as a file. Never put the environment key, the admin
+  key or `BUDDY_TOKEN` on a worker.
 - **No secrets in code or git.** Everything comes from env (`.env`, dotenv) or
   Buddy sandbox `variables` (encrypted for secrets).
 - **Testability:** orchestration logic (`src/worker-dispatch.ts`, `src/janitor.ts`)

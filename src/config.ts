@@ -92,6 +92,8 @@ export const CONFIG = {
   workerResources: (str("WORKER_RESOURCES") ?? "2x4") as SandboxResources,
   workerIdleTimeoutSec: num("WORKER_IDLE_TIMEOUT_SEC", 900),
   workspaceDir: str("WORKSPACE_DIR") ?? "/workspace",
+  workSecretDir: "/opt/cma-worker",
+  memoryDir: "/mnt/memory",
 
   // Orchestrator
   orchPort: num("ORCH_PORT", 8080),

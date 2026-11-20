@@ -46,8 +46,12 @@ Dispatcher pre-readies the session's worker sandbox, then claims queued work
 (poll + ack), keeping the newest work item per session
         │
         ▼
-Worker runs:  cd /workspace && ANTHROPIC_WORK_ID=<id> ant beta:worker run \
-                --workdir /workspace --max-idle 60s
+Dispatcher uploads the work item's secret to /opt/cma-worker/work-secret
+        │
+        ▼
+Worker runs:  cd /workspace && ANTHROPIC_WORK_ID=<id> \
+                ANTHROPIC_WORK_SECRET_FILE=/opt/cma-worker/work-secret \
+                ant beta:worker run --workdir /workspace --max-idle 60s
         │
         ▼
 ant heartbeats the lease, runs tools, posts results, stops the work item,
@@ -60,9 +64,10 @@ heartbeat, the session event stream, tool execution, and the work stop.
 ## Buddy-specific design decisions
 
 - **No per-process env in exec.** `runCommand` only accepts `{ command, runtime }`.
-  Long-lived credentials are set as sandbox `variables` at worker creation
-  (`ANTHROPIC_ENVIRONMENT_KEY` encrypted); the per-run `ANTHROPIC_WORK_ID` is
-  inlined into the BASH command string. See `src/worker-dispatch.ts`.
+  The session's ids are set as sandbox `variables` at worker creation; the
+  per-run `ANTHROPIC_WORK_ID` is inlined into the BASH command string, and the
+  per-run work secret goes in a file, never in the command text. See
+  `src/worker-dispatch.ts`.
 - **Idle timeout set after creation.** `createFromSnapshot` does not accept
   `timeout`, so `ensureWorker` sets `WORKER_IDLE_TIMEOUT_SEC` via `update()`
   right after creating the worker.
@@ -125,12 +130,13 @@ double-dispatch.
 ## Security boundaries
 
 Buddy does not inject credentials into a worker's outbound requests — no egress
-proxy or firewall holds them on the worker's behalf. The environment key is
-decrypted into the worker's process env, where the agent's `bash` can read it.
-Therefore:
+proxy or firewall holds them on the worker's behalf. Whatever a worker holds,
+the agent's `bash` can read. Therefore:
 
-- Workers receive only the scoped, revocable `ANTHROPIC_ENVIRONMENT_KEY` — never
-  the admin `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`.
+- Workers never receive `ANTHROPIC_ENVIRONMENT_KEY`, the admin
+  `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`. Each `ant` run gets only its work item's
+  secret, whose sessions token covers that one work item, not the environment's
+  work queue.
 - The orchestrator holds `BUDDY_TOKEN` (to spawn workers) and the webhook signing
   key; workers hold neither.
 - The HTTP endpoint uses `auth_type: NONE` because the webhook **signature** is
@@ -237,14 +243,20 @@ Two rules follow from the lifecycle:
   archived, or missing, reaped after `MAX_IDLE_DAYS` in STOPPED, or removed
   immediately by `npm run teardown`. Collect before any of those three.
 
-Two platform features do not work here. Vault `environment_variable` credentials
-are cloud-only, because egress is yours, so there is no Anthropic-managed hop at
-which a secret could be substituted. `memory_store` session resources need a
-per-work-item sessions token: `ant` mounts memory stores only with the work
-item's secret (`--work-secret-file`), and the memory endpoints reject the
-environment key. The dispatcher passes only the environment key, so `ant` fails
-the work item of a session that has a memory store attached instead of running
-it. Don't attach memory stores to sessions in this environment.
+Vault `environment_variable` credentials do not work here: they are cloud-only,
+because egress is yours, so there is no Anthropic-managed hop at which a secret
+could be substituted.
+
+`memory_store` session resources work, as a synced local copy rather than a
+live mount. `ant` downloads each attached store to its mount path under
+`/mnt/memory/` (which `scripts/build-snapshot.ts` creates and gives to the
+`buddy` user), syncs changes back after a tool call once the sync interval has
+passed and once more when the run ends, then removes the folder. An edit the
+agent makes in its last tool call therefore reaches the store only when `ant`
+exits, `ANT_MAX_IDLE` after the turn. It authenticates those calls with the work secret's sessions
+token, since the memory endpoints reject the environment key. `read_only`
+stores are enforced by `ant`'s file tools only; `bash` can still change the
+local copy.
 
 ## Upgrading the `ant` CLI
 

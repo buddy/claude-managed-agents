@@ -10,6 +10,7 @@ export interface WorkItem {
   environment_id?: string;
   created_at?: string;
   data: { type: string; id: string };
+  secret?: string | null;
 }
 
 export type SandboxStatus =
@@ -66,6 +67,7 @@ export interface SandboxLike {
   update(cfg: UpdateInput): Promise<void>;
   runCommand(opts: RunCommandOpts): Promise<CommandLike>;
   listCommands(): Promise<CommandLike[]>;
+  fs: { uploadFile(source: Buffer | string, remotePath: string): Promise<void> };
 }
 
 export interface SandboxListItem {

@@ -133,21 +133,24 @@ npm run typecheck
 
 ## Credential boundary
 
-The worker receives `ANTHROPIC_ENVIRONMENT_KEY` as an encrypted sandbox variable.
-Mitigation: only the **scoped, revocable** environment key reaches the worker —
-never the admin `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`.
+No long-lived Anthropic credential reaches a worker. The environment key stays
+in the orchestrator; each `ant` run is authorized by its work item's secret,
+which carries a sessions token for that one work item. The orchestrator uploads
+it to `/opt/cma-worker/work-secret` (mode `0600`) and points `ant` at it with
+`ANTHROPIC_WORK_SECRET_FILE`.
 
-| Credential | Local shell | Orchestrator var | Worker var |
+| Credential | Local shell | Orchestrator var | Worker |
 | --- | --- | --- | --- |
 | `ANTHROPIC_API_KEY` (admin) | yes | no | no |
-| `ANTHROPIC_ENVIRONMENT_KEY` (scoped) | yes | encrypted | encrypted |
+| `ANTHROPIC_ENVIRONMENT_KEY` (scoped) | yes | encrypted | no |
 | `ANTHROPIC_WEBHOOK_SIGNING_KEY` | yes | encrypted | no |
 | `BUDDY_TOKEN` | yes | encrypted | no |
+| Work item secret (per run) | — | — | file, replaced on every run |
 | `ANTHROPIC_WORK_ID` (per run) | — | — | inline in the BASH command, not stored |
 
-> The agent's own `bash` tool runs inside the worker, so it can read that
-> worker's env. `encrypted` only hides the value in the Buddy UI/API, not from
-> the running process. Rotate/revoke the environment key independently.
+> The agent's own `bash` tool runs inside the worker as the same user as `ant`,
+> so it can read the work secret file. That exposes one session's token, not
+> the environment's work queue.
 
 ## Cleanup
 

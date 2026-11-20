@@ -23,6 +23,9 @@ const ANT_INSTALL = [
   "sudo chmod +x /usr/local/bin/ant",
   `sudo mkdir -p ${CONFIG.workspaceDir}`,
   `sudo chown buddy:buddy ${CONFIG.workspaceDir} || true`,
+  `sudo mkdir -p ${CONFIG.workSecretDir} ${CONFIG.memoryDir}`,
+  `sudo chown buddy:buddy ${CONFIG.workSecretDir} ${CONFIG.memoryDir}`,
+  `sudo chmod 700 ${CONFIG.workSecretDir}`,
   "ant --version",
 ].join("\n");
 
