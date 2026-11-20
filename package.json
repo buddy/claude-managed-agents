@@ -24,7 +24,7 @@
     "session": "node example/run-session.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.137.0",
+    "@anthropic-ai/sdk": "1.10.0",
     "@buddy-works/sandbox-sdk": "0.3.0",
     "@inquirer/prompts": "8.5.2",
     "fastify": "5.12.8"
