@@ -10,6 +10,7 @@ export interface WorkItem {
   environment_id?: string;
   created_at?: string;
   data: { type: string; id: string };
+  secret?: string | null;
 }
 
 export type SandboxStatus =
@@ -22,9 +23,10 @@ export type SandboxStatus =
 
 export interface CommandLike {
   data: {
-    id?: string;
+    execution_id?: string;
     command?: string;
-    status?: "INPROGRESS" | "SUCCESSFUL" | "FAILED";
+    status?: string;
+    started_at?: Date | string;
   };
 }
 
@@ -32,8 +34,7 @@ export interface RunCommandOpts {
   command: string;
   runtime?: "BASH" | "JAVASCRIPT" | "TYPESCRIPT" | "PYTHON";
   detached?: boolean;
-  stdout?: unknown;
-  stderr?: unknown;
+  output?: unknown;
 }
 
 export interface VariableInput {
@@ -66,6 +67,7 @@ export interface SandboxLike {
   update(cfg: UpdateInput): Promise<void>;
   runCommand(opts: RunCommandOpts): Promise<CommandLike>;
   listCommands(): Promise<CommandLike[]>;
+  fs: { uploadFile(source: Buffer | string, remotePath: string): Promise<void> };
 }
 
 export interface SandboxListItem {

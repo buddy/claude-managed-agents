@@ -6,9 +6,11 @@
  * `ant beta:worker run` via the sandbox's detached command API; `ant` then owns
  * the heartbeat, tool execution, result posting, and work-item stop.
  *
- * Buddy's exec has no per-process env, so the long-lived credentials are set as
- * sandbox variables at creation (the key encrypted) and the per-run
- * `ANTHROPIC_WORK_ID` is inlined into the BASH command string.
+ * Buddy's exec has no per-process env, so the session's ids are set as sandbox
+ * variables at creation and the per-run `ANTHROPIC_WORK_ID` is inlined into the
+ * BASH command string. The environment key never reaches a worker: each run is
+ * authorized by its work item's secret, uploaded to a file `ant` reads through
+ * `ANTHROPIC_WORK_SECRET_FILE`.
  */
 import type { ConnectionConfig } from "@buddy-works/sandbox-sdk";
 
@@ -16,7 +18,7 @@ import { CONFIG } from "./config.ts";
 import type { Logger } from "./log.ts";
 import { workerIdentifier } from "./naming.ts";
 import { ANT_RUN_MARKER } from "./runner-probe.ts";
-import { workerTags } from "./tags.ts";
+import { hasCurrentWorkerLayout, workerTags } from "./tags.ts";
 import type {
   AnthropicLike,
   SandboxLike,
@@ -30,7 +32,6 @@ export interface DispatcherDeps {
   anthropic: AnthropicLike;
   sandboxes: SandboxStatic;
   environmentId: string;
-  environmentKey: string;
   baseSnapshotId: string;
   log: Logger;
   baseUrl?: string;
@@ -80,7 +81,6 @@ export class Dispatcher {
     const vars: VariableInput[] = [
       { key: "ANTHROPIC_ENVIRONMENT_ID", value: this.deps.environmentId },
       { key: "ANTHROPIC_SESSION_ID", value: sessionId },
-      { key: "ANTHROPIC_ENVIRONMENT_KEY", value: this.deps.environmentKey, encrypted: true },
     ];
     if (this.deps.baseUrl) vars.push({ key: "ANTHROPIC_BASE_URL", value: this.deps.baseUrl });
     return vars;
@@ -98,6 +98,13 @@ export class Dispatcher {
       sb = await sandboxes.getByIdentifier(identifier, { connection });
     } catch (e) {
       if (!isNotFound(e)) throw e;
+    }
+
+    if (sb && !hasCurrentWorkerLayout(sb.data.tags)) {
+      log.info("recreating worker created before the work-secret change", { identifier, session: sessionId });
+      await sb.destroy();
+      await this.waitUntilGone(identifier);
+      sb = undefined;
     }
 
     if (!sb) {
@@ -123,6 +130,20 @@ export class Dispatcher {
     return sb;
   }
 
+  private async waitUntilGone(identifier: string): Promise<void> {
+    const { sandboxes, connection } = this.deps;
+    for (let attempt = 0; attempt < CONFIG.runStartAttempts; attempt++) {
+      try {
+        await sandboxes.getByIdentifier(identifier, { connection });
+      } catch (e) {
+        if (isNotFound(e)) return;
+        throw e;
+      }
+      await sleep(2000);
+    }
+    throw new Error(`worker ${identifier} still exists after destroy`);
+  }
+
   /** Launch one `ant beta:worker run` for one already-claimed work item. */
   async dispatchWorkItem(work: WorkItem, preparedWorker?: SandboxLike): Promise<boolean> {
     const { log } = this.deps;
@@ -131,6 +152,12 @@ export class Dispatcher {
       log.warn("dropping non-session work", { work: work.id, type: work.data.type });
       await this.stopWork(work, true);
       return true;
+    }
+
+    if (!work.secret) {
+      log.error("work item carried no secret; cannot authorize ant", { work: work.id, session: sessionId });
+      await this.stopWork(work, true);
+      return false;
     }
 
     if (!this.markInFlight(work.id)) {
@@ -144,14 +171,18 @@ export class Dispatcher {
       // The work id travels in the launched command's text (ANTHROPIC_WORK_ID=…),
       // so the janitor can recover it from listCommands() to release a lingering
       // lease if the runner is SIGKILLed before `ant` can stop the work item.
+      const secretFile = `${CONFIG.workSecretDir}/work-secret`;
       const command =
         `cd ${CONFIG.workspaceDir} && ` +
+        `chmod 600 ${secretFile} && ` +
         `ANTHROPIC_WORK_ID=${shellQuote(work.id)} ` +
+        `ANTHROPIC_WORK_SECRET_FILE=${secretFile} ` +
         `${ANT_RUN_MARKER} --workdir ${CONFIG.workspaceDir} --max-idle ${CONFIG.antMaxIdle}`;
 
       for (let attempt = 0; attempt < CONFIG.runStartAttempts; attempt++) {
         try {
-          await worker.runCommand({ command, runtime: "BASH", detached: true, stdout: null, stderr: null });
+          await worker.fs.uploadFile(Buffer.from(work.secret), secretFile);
+          await worker.runCommand({ command, runtime: "BASH", detached: true, output: null });
           log.info("worker running ant", { work: work.id, session: sessionId });
           return true;
         } catch (e) {

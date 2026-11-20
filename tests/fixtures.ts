@@ -23,6 +23,7 @@ export function workItem(id: string, sessionId: string, createdAt?: string): Wor
     environment_id: "env_test",
     created_at: createdAt,
     data: { type: "session", id: sessionId },
+    secret: `secret-for-${id}`,
   };
 }
 
@@ -39,6 +40,7 @@ export interface FakeSandbox extends SandboxLike {
   update: MockedFunction<SandboxLike["update"]>;
   runCommand: MockedFunction<SandboxLike["runCommand"]>;
   listCommands: MockedFunction<SandboxLike["listCommands"]>;
+  fs: { uploadFile: MockedFunction<SandboxLike["fs"]["uploadFile"]> };
 }
 
 export function makeFakeSandbox(data: SandboxData, commands: CommandLike[] = []): FakeSandbox {
@@ -55,6 +57,7 @@ export function makeFakeSandbox(data: SandboxData, commands: CommandLike[] = [])
     }),
     runCommand: vi.fn(async (opts: { command: string }) => ({ data: { command: opts.command, status: "INPROGRESS" } })),
     listCommands: vi.fn(async () => sb.commands),
+    fs: { uploadFile: vi.fn(async () => undefined) },
   };
   return sb;
 }
