@@ -17,7 +17,8 @@
   fakes (`tests/fixtures.ts`). Keep new logic injectable and add a unit test.
 - **Worker env quirk:** Buddy `exec` has no per-process env. Long-lived values go
   in sandbox `variables`; per-run values (the work id) are inlined into the BASH
-  command. Don't reach for an env arg on `runCommand` — it doesn't exist.
+  command, except the work secret, which is uploaded as a file and never put in
+  the command text. Don't reach for an env arg on `runCommand` — it doesn't exist.
 - **One orchestrator per environment.** Identifier `cma-orchestrator`; workers are
   `cma-worker-<sanitized session id>`. Janitor scoping keys off the `cma` tag and
   `cma-env:<id>`.
