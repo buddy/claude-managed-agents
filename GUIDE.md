@@ -287,15 +287,41 @@ npm run deploy-orchestrator   # pushes the new id into the orchestrator's variab
   `workerVariables()`. A changed invocation does not fail loudly:
   `runCommand({ detached: true })` returns as soon as Buddy accepts the string, so
   dispatch reports success while `ant` exits on bad arguments, and the janitor
-  then re-dispatches that session every `JANITOR_SECONDS` forever. What the
-  dispatcher emits works unchanged from 1.10.0 through 2.11.0. 2.x changed the
-  surface around it: `--unrestricted-paths` is gone (passing it is now an
-  error), `--environment-key` became optional, and `--work-secret-file` is new.
+  then re-dispatches that session every `JANITOR_SECONDS` forever. The
+  dispatcher relies on `ANTHROPIC_WORK_SECRET_FILE`, the variable behind
+  `--work-secret-file`, which `ant` 1.x does not have, so `build-snapshot`
+  refuses an `ANT_VERSION` below 2.
 - Those older workers need no manual cleanup. The janitor destroys a worker once
   its session is terminated/archived/missing and reaps STOPPED ones after
   `MAX_IDLE_DAYS`. Reach for `npm run teardown` only to force every session onto
   the new `ant` at once — it also destroys the orchestrator and cuts off
   in-flight tool execution.
+
+### Upgrading an install from before the work secret file
+
+Workers used to hold `ANTHROPIC_ENVIRONMENT_KEY` and ran `ant` 1.x. They now
+need `ant` 2.x, the `/opt/cma-worker` and `/mnt/memory` directories from the
+current snapshot, and the work item's secret instead of the key. An old
+snapshot or an old worker does not work with the current orchestrator, so this
+upgrade is not optional:
+
+```bash
+# in .env: ANT_VERSION=2.11.0 (or later)
+npm run build-snapshot        # snapshot named cma-base-v2-<timestamp>
+# replace BUDDY_BASE_SNAPSHOT_ID in .env with the printed id
+npm run teardown              # optional, see below
+npm run deploy-orchestrator
+```
+
+- `deploy-orchestrator` refuses a `BUDDY_BASE_SNAPSHOT_ID` that does not exist
+  or was built before this change (its name lacks the `cma-base-v2-` prefix).
+- A worker created before this change is destroyed and recreated from the new
+  snapshot the next time its session runs, recognised by its missing
+  `cma-worker-v2` tag. Its `/workspace` is lost with it; collect anything you
+  need first.
+- Until then an old worker still holds the environment key. Run
+  `npm run teardown` to remove them all at once, and rotate the environment key
+  in the Console, since the agent in any old worker could read it.
 
 ## Known caveats (validate in your workspace)
 

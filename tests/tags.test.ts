@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  hasCurrentWorkerLayout,
   isManaged,
   orchestratorTags,
   parseStoppedAtMs,
@@ -17,6 +18,12 @@ describe("tags", () => {
     }
     expect(isManaged(workerTags())).toBe(true);
     expect(isManaged(["something-else"])).toBe(false);
+  });
+
+  it("marks new workers with the current layout and spots older ones", () => {
+    expect(hasCurrentWorkerLayout(workerTags())).toBe(true);
+    expect(hasCurrentWorkerLayout(["cma"])).toBe(false);
+    expect(hasCurrentWorkerLayout(undefined)).toBe(false);
   });
 
   it("stopped-at tag is digits-only and round-trips", () => {

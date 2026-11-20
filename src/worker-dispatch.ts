@@ -18,7 +18,7 @@ import { CONFIG } from "./config.ts";
 import type { Logger } from "./log.ts";
 import { workerIdentifier } from "./naming.ts";
 import { ANT_RUN_MARKER } from "./runner-probe.ts";
-import { workerTags } from "./tags.ts";
+import { hasCurrentWorkerLayout, workerTags } from "./tags.ts";
 import type {
   AnthropicLike,
   SandboxLike,
@@ -100,6 +100,13 @@ export class Dispatcher {
       if (!isNotFound(e)) throw e;
     }
 
+    if (sb && !hasCurrentWorkerLayout(sb.data.tags)) {
+      log.info("recreating worker created before the work-secret change", { identifier, session: sessionId });
+      await sb.destroy();
+      await this.waitUntilGone(identifier);
+      sb = undefined;
+    }
+
     if (!sb) {
       log.info("creating worker", { identifier, session: sessionId });
       sb = await sandboxes.createFromSnapshot(this.deps.baseSnapshotId, {
@@ -121,6 +128,20 @@ export class Dispatcher {
       await sb.start();
     }
     return sb;
+  }
+
+  private async waitUntilGone(identifier: string): Promise<void> {
+    const { sandboxes, connection } = this.deps;
+    for (let attempt = 0; attempt < CONFIG.runStartAttempts; attempt++) {
+      try {
+        await sandboxes.getByIdentifier(identifier, { connection });
+      } catch (e) {
+        if (isNotFound(e)) return;
+        throw e;
+      }
+      await sleep(2000);
+    }
+    throw new Error(`worker ${identifier} still exists after destroy`);
   }
 
   /** Launch one `ant beta:worker run` for one already-claimed work item. */

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CONFIG } from "../src/config.ts";
 import { workerIdentifier } from "../src/naming.ts";
 import { ANT_RUN_MARKER, latestAntWorkId } from "../src/runner-probe.ts";
+import { workerTags } from "../src/tags.ts";
 import { Dispatcher } from "../src/worker-dispatch.ts";
 import {
   makeFakeAnthropic,
@@ -48,7 +49,7 @@ describe("dispatchWorkItem", () => {
 
   it("inlines ANTHROPIC_WORK_ID and runs ant on the session worker", async () => {
     const id = workerIdentifier("sesn_a");
-    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING" });
+    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING", tags: workerTags() });
     const sandboxes = makeFakeSandboxStatic({ byIdentifier: new Map([[id, worker]]) });
     const { dispatcher } = makeDispatcher({ sandboxes });
 
@@ -72,7 +73,7 @@ describe("dispatchWorkItem", () => {
 
   it("uploads the work item's secret before starting ant, never inlining it", async () => {
     const id = workerIdentifier("sesn_a");
-    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING" });
+    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING", tags: workerTags() });
     const sandboxes = makeFakeSandboxStatic({ byIdentifier: new Map([[id, worker]]) });
     const { dispatcher } = makeDispatcher({ sandboxes });
 
@@ -90,7 +91,7 @@ describe("dispatchWorkItem", () => {
 
   it("force-stops a work item that carries no secret without starting ant", async () => {
     const id = workerIdentifier("sesn_a");
-    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING" });
+    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING", tags: workerTags() });
     const sandboxes = makeFakeSandboxStatic({ byIdentifier: new Map([[id, worker]]) });
     const { dispatcher, anthropic } = makeDispatcher({ sandboxes });
 
@@ -127,7 +128,7 @@ describe("ensureWorker", () => {
 
   it("starts an existing stopped worker", async () => {
     const id = workerIdentifier("sesn_stopped");
-    const worker = makeFakeSandbox({ identifier: id, status: "STOPPED" });
+    const worker = makeFakeSandbox({ identifier: id, status: "STOPPED", tags: workerTags() });
     const sandboxes = makeFakeSandboxStatic({ byIdentifier: new Map([[id, worker]]) });
     const { dispatcher } = makeDispatcher({ sandboxes });
 
@@ -135,12 +136,45 @@ describe("ensureWorker", () => {
     expect(worker.start).toHaveBeenCalledOnce();
     expect(sandboxes.createFromSnapshot).not.toHaveBeenCalled();
   });
+
+  it("recreates a worker created before the work-secret change", async () => {
+    const id = workerIdentifier("sesn_old");
+    const byIdentifier = new Map([[id, makeFakeSandbox({ identifier: id, status: "RUNNING", tags: ["cma"] })]]);
+    const old = byIdentifier.get(id)!;
+    old.destroy.mockImplementation(async () => {
+      byIdentifier.delete(id);
+    });
+    const sandboxes = makeFakeSandboxStatic({ byIdentifier });
+    const { dispatcher } = makeDispatcher({ sandboxes });
+
+    const sb = await dispatcher.ensureWorker("sesn_old");
+
+    expect(old.destroy).toHaveBeenCalledOnce();
+    expect(sandboxes.createFromSnapshot).toHaveBeenCalledWith(
+      "snap_base",
+      expect.objectContaining({ identifier: id, tags: workerTags() }),
+    );
+    expect(sb).not.toBe(old);
+  });
+
+  it("keeps a worker that already has the current layout", async () => {
+    const id = workerIdentifier("sesn_current");
+    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING", tags: workerTags() });
+    const sandboxes = makeFakeSandboxStatic({ byIdentifier: new Map([[id, worker]]) });
+    const { dispatcher } = makeDispatcher({ sandboxes });
+
+    const sb = await dispatcher.ensureWorker("sesn_current");
+
+    expect(sb).toBe(worker);
+    expect(worker.destroy).not.toHaveBeenCalled();
+    expect(sandboxes.createFromSnapshot).not.toHaveBeenCalled();
+  });
 });
 
 describe("drainAndDispatch", () => {
   it("keeps the newest work per session and force-stops the rest", async () => {
     const id = workerIdentifier("sesn_a");
-    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING" });
+    const worker = makeFakeSandbox({ identifier: id, status: "RUNNING", tags: workerTags() });
     const sandboxes = makeFakeSandboxStatic({ byIdentifier: new Map([[id, worker]]) });
     const anthropic = makeFakeAnthropic({
       pollQueue: [

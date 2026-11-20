@@ -8,6 +8,7 @@
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
 import { buddyConnection } from "../src/clients.ts";
+import { antVersionProblem, BASE_SNAPSHOT_PREFIX } from "../src/compat.ts";
 import { CONFIG } from "../src/config.ts";
 import { errLabel } from "../src/util.ts";
 
@@ -30,6 +31,9 @@ const ANT_INSTALL = [
 ].join("\n");
 
 async function main(): Promise<void> {
+  const versionProblem = antVersionProblem(CONFIG.antVersion);
+  if (versionProblem) throw new Error(versionProblem);
+
   const stamp = Date.now();
   console.log(`creating base builder sandbox (ant ${CONFIG.antVersion})...`);
   const sb = await Sandbox.create({
@@ -50,7 +54,7 @@ async function main(): Promise<void> {
     }
 
     console.log("creating snapshot...");
-    const snap = await sb.createSnapshot({ name: `cma-base-${stamp}` });
+    const snap = await sb.createSnapshot({ name: `${BASE_SNAPSHOT_PREFIX}${stamp}` });
     await snap.waitUntilReady();
 
     console.log(`created snapshot ${snap.id}`);
