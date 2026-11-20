@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz
-        version: https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz(zod@4.3.5)
+        specifier: 0.137.0
+        version: 0.137.0(zod@4.3.5)
       '@buddy-works/sandbox-sdk':
         specifier: 0.3.0
         version: 0.3.0
@@ -29,13 +29,12 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1))
+        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1))
 
 packages:
 
-  '@anthropic-ai/sdk@https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz':
-    resolution: {integrity: sha512-Bj8lMehzH2R1HWcG/On35GA6aHfM6HZGAW6KqEYSlkKgeCmZ7M7vUlkHSh8daS4pLxZUNhXcgKTiNDDGvAgPfA==, tarball: https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz}
-    version: 0.96.0
+  '@anthropic-ai/sdk@0.137.0':
+    resolution: {integrity: sha512-YpEnbPz8kWF1BWthwUCnRhci7OvDLSUO8NFKoevoPkjNkK9CJeibZITgxr9vhqOP8Le61e5tNDHFTxw1dc6Png==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -361,6 +360,10 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+
+  '@opentelemetry/api@1.10.0':
+    resolution: {integrity: sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ==}
+    engines: {node: '>=8.0.0'}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -1077,8 +1080,9 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz(zod@4.3.5)':
+  '@anthropic-ai/sdk@0.137.0(zod@4.3.5)':
     dependencies:
+      '@opentelemetry/api': 1.10.0
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
     optionalDependencies:
@@ -1312,6 +1316,8 @@ snapshots:
       '@types/node': 24.13.3
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@opentelemetry/api@1.10.0': {}
 
   '@pinojs/redact@0.4.0': {}
 
@@ -1870,7 +1876,7 @@ snapshots:
       fsevents: 2.3.3
       tsx: 4.23.1
 
-  vitest@4.1.11(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1)):
+  vitest@4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1)):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1))
@@ -1893,6 +1899,7 @@ snapshots:
       vite: 7.3.6(@types/node@24.13.3)(tsx@4.23.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
+      '@opentelemetry/api': 1.10.0
       '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
