@@ -59,7 +59,7 @@ function resourceSpec(name: string, fallback: SandboxResources): SandboxResource
   return oneOf(name, SANDBOX_RESOURCES, fallback);
 }
 
-type TunnelRegion = NonNullable<CreateFromSnapshotConfig["endpoints"]>[number]["region"];
+type TunnelRegion = NonNullable<NonNullable<CreateFromSnapshotConfig["endpoints"]>[number]["region"]>;
 
 export const BETA = str("ANTHROPIC_BETA") ?? "managed-agents-2026-04-01";
 

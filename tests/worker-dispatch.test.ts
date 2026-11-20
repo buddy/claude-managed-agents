@@ -60,8 +60,11 @@ describe("dispatchWorkItem", () => {
       `cd ${CONFIG.workspaceDir} && ANTHROPIC_WORK_ID='work_x' ` +
       `${ANT_RUN_MARKER} --workdir ${CONFIG.workspaceDir} --max-idle ${CONFIG.antMaxIdle}`;
     expect(worker.runCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ command: expected, runtime: "BASH", detached: true }),
+      expect.objectContaining({ command: expected, runtime: "BASH", detached: true, output: null }),
     );
+    const opts = worker.runCommand.mock.calls[0]![0];
+    expect(opts).not.toHaveProperty("stdout");
+    expect(opts).not.toHaveProperty("stderr");
     // the janitor recovers the work id from the command text, not a tag
     expect(latestAntWorkId([{ data: { command: expected, status: "INPROGRESS" } }])).toBe("work_x");
   });

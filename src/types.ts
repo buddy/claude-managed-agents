@@ -22,9 +22,10 @@ export type SandboxStatus =
 
 export interface CommandLike {
   data: {
-    id?: string;
+    execution_id?: string;
     command?: string;
-    status?: "INPROGRESS" | "SUCCESSFUL" | "FAILED";
+    status?: string;
+    started_at?: Date | string;
   };
 }
 
@@ -32,8 +33,7 @@ export interface RunCommandOpts {
   command: string;
   runtime?: "BASH" | "JAVASCRIPT" | "TYPESCRIPT" | "PYTHON";
   detached?: boolean;
-  stdout?: unknown;
-  stderr?: unknown;
+  output?: unknown;
 }
 
 export interface VariableInput {

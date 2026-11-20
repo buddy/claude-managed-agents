@@ -151,7 +151,7 @@ export class Dispatcher {
 
       for (let attempt = 0; attempt < CONFIG.runStartAttempts; attempt++) {
         try {
-          await worker.runCommand({ command, runtime: "BASH", detached: true, stdout: null, stderr: null });
+          await worker.runCommand({ command, runtime: "BASH", detached: true, output: null });
           log.info("worker running ant", { work: work.id, session: sessionId });
           return true;
         } catch (e) {

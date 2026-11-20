@@ -43,8 +43,7 @@ async function main(): Promise<void> {
     console.log("verifying ant is on PATH...");
     const probe = await sb.runCommand({ command: "ant --version", runtime: "BASH" });
     if (probe.data.status !== "SUCCESSFUL") {
-      const err = await sb.runCommand({ command: "ant --version", runtime: "BASH" }).then((c) => c.stderr());
-      throw new Error(`ant not runnable in base image: ${err}`);
+      throw new Error(`ant not runnable in base image: ${await probe.output()}`);
     }
 
     console.log("creating snapshot...");

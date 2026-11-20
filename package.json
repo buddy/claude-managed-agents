@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "https://app.stainless.com/pkg/s/anthropic-typescript/11dd7e25acfec7caffc11c06d11629f42846b595/dist.tar.gz",
-    "@buddy-works/sandbox-sdk": "0.1.8",
+    "@buddy-works/sandbox-sdk": "0.3.0",
     "@inquirer/prompts": "8.5.2",
     "fastify": "5.12.8"
   },
