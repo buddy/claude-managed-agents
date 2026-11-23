@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
 import { buddyConnection } from "../src/clients.ts";
+import { baseSnapshotProblem } from "../src/compat.ts";
 import { CONFIG, requireBaseSnapshotId, requireEnv, requireEnvironmentId, requireEnvironmentKey, webhookSigningKey } from "../src/config.ts";
 import { orchestratorTags } from "../src/tags.ts";
 import type { VariableInput } from "../src/types.ts";
@@ -74,6 +75,9 @@ function orchestratorVariables(): VariableInput[] {
 
 async function main(): Promise<void> {
   const connection = buddyConnection();
+
+  const snapshotProblem = baseSnapshotProblem(await Sandbox.listSnapshots({ connection }), requireBaseSnapshotId());
+  if (snapshotProblem) throw new Error(snapshotProblem);
 
   // Reuse an existing orchestrator sandbox if present (one per environment).
   let sb: Sandbox | undefined;

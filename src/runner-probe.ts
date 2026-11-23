@@ -23,11 +23,18 @@ export function hasLiveAntRun(commands: CommandLike[]): boolean {
   return antRunCommands(commands).some((c) => c.data.status === "INPROGRESS");
 }
 
+function startedAtMs(c: CommandLike): number {
+  const t = c.data.started_at === undefined ? NaN : new Date(c.data.started_at).getTime();
+  return Number.isFinite(t) ? t : -Infinity;
+}
+
 /** Recover the work id from the most recent `ant beta:worker run` command, if any. */
 export function latestAntWorkId(commands: CommandLike[]): string | undefined {
-  const ant = antRunCommands(commands);
-  const last = ant[ant.length - 1];
-  const m = WORK_ID_RE.exec(last?.data.command ?? "");
+  let latest: CommandLike | undefined;
+  for (const c of antRunCommands(commands)) {
+    if (!latest || startedAtMs(c) > startedAtMs(latest)) latest = c;
+  }
+  const m = WORK_ID_RE.exec(latest?.data.command ?? "");
   return m?.[1];
 }
 

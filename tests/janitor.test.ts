@@ -35,7 +35,6 @@ function harness(sandbox: FakeSandbox, sessions?: Map<string, SessionLike>) {
     anthropic,
     sandboxes,
     environmentId: ENV,
-    environmentKey: "k",
     baseSnapshotId: "snap",
     log: silentLogger(),
   });

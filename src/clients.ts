@@ -1,7 +1,7 @@
 /**
  * Client factories. Two distinct Anthropic credentials, by design:
  *   - environment-key client  → poll/ack/stop work, retrieve sessions, verify
- *     webhooks. This is what the orchestrator and workers use.
+ *     webhooks. Only the orchestrator uses it; workers get a per-run work secret.
  *   - admin (API-key) client  → create environments/agents/sessions. LOCAL only.
  *
  * The Buddy SDK reads BUDDY_* from the environment by default; `buddyConnection()`

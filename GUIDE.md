@@ -46,8 +46,12 @@ Dispatcher pre-readies the session's worker sandbox, then claims queued work
 (poll + ack), keeping the newest work item per session
         │
         ▼
-Worker runs:  cd /workspace && ANTHROPIC_WORK_ID=<id> ant beta:worker run \
-                --workdir /workspace --max-idle 60s
+Dispatcher uploads the work item's secret to /opt/cma-worker/work-secret
+        │
+        ▼
+Worker runs:  cd /workspace && ANTHROPIC_WORK_ID=<id> \
+                ANTHROPIC_WORK_SECRET_FILE=/opt/cma-worker/work-secret \
+                ant beta:worker run --workdir /workspace --max-idle 60s
         │
         ▼
 ant heartbeats the lease, runs tools, posts results, stops the work item,
@@ -60,9 +64,10 @@ heartbeat, the session event stream, tool execution, and the work stop.
 ## Buddy-specific design decisions
 
 - **No per-process env in exec.** `runCommand` only accepts `{ command, runtime }`.
-  Long-lived credentials are set as sandbox `variables` at worker creation
-  (`ANTHROPIC_ENVIRONMENT_KEY` encrypted); the per-run `ANTHROPIC_WORK_ID` is
-  inlined into the BASH command string. See `src/worker-dispatch.ts`.
+  The session's ids are set as sandbox `variables` at worker creation; the
+  per-run `ANTHROPIC_WORK_ID` is inlined into the BASH command string, and the
+  per-run work secret goes in a file, never in the command text. See
+  `src/worker-dispatch.ts`.
 - **Idle timeout set after creation.** `createFromSnapshot` does not accept
   `timeout`, so `ensureWorker` sets `WORKER_IDLE_TIMEOUT_SEC` via `update()`
   right after creating the worker.
@@ -125,12 +130,13 @@ double-dispatch.
 ## Security boundaries
 
 Buddy does not inject credentials into a worker's outbound requests — no egress
-proxy or firewall holds them on the worker's behalf. The environment key is
-decrypted into the worker's process env, where the agent's `bash` can read it.
-Therefore:
+proxy or firewall holds them on the worker's behalf. Whatever a worker holds,
+the agent's `bash` can read. Therefore:
 
-- Workers receive only the scoped, revocable `ANTHROPIC_ENVIRONMENT_KEY` — never
-  the admin `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`.
+- Workers never receive `ANTHROPIC_ENVIRONMENT_KEY`, the admin
+  `ANTHROPIC_API_KEY` or `BUDDY_TOKEN`. Each `ant` run gets only its work item's
+  secret, whose sessions token covers that one work item, not the environment's
+  work queue.
 - The orchestrator holds `BUDDY_TOKEN` (to spawn workers) and the webhook signing
   key; workers hold neither.
 - The HTTP endpoint uses `auth_type: NONE` because the webhook **signature** is
@@ -143,9 +149,9 @@ Therefore:
 Self-hosted environments have no `/mnt/session/outputs`. A worker is an ordinary
 `ubuntu:24.04` sandbox, and `--workdir` (`WORKSPACE_DIR`, default `/workspace`) is
 just a directory `scripts/build-snapshot.ts` creates inside it — the place the
-agent's file tools are pointed by default, not a boundary. `ant` is explicit that
-the workdir check guards the file tools only and that `bash` ignores it, so treat
-the whole sandbox filesystem as reachable.
+agent's file tools are pointed by default, not a boundary. The workdir check
+guards the file tools only; `bash` is not confined to it, so treat the whole
+sandbox filesystem as reachable.
 
 That directory is plain sandbox storage: nothing is mounted, and no worker shares
 it with the orchestrator or with another session. Files therefore move in and out
@@ -237,10 +243,20 @@ Two rules follow from the lifecycle:
   archived, or missing, reaped after `MAX_IDLE_DAYS` in STOPPED, or removed
   immediately by `npm run teardown`. Collect before any of those three.
 
-Two platform features do not apply here at all: `memory_store` session resources
-and vault `environment_variable` credentials are cloud-only, the latter because
-egress is yours, so there is no Anthropic-managed hop at which a secret could be
-substituted.
+Vault `environment_variable` credentials do not work here: they are cloud-only,
+because egress is yours, so there is no Anthropic-managed hop at which a secret
+could be substituted.
+
+`memory_store` session resources work, as a synced local copy rather than a
+live mount. `ant` downloads each attached store to its mount path under
+`/mnt/memory/` (which `scripts/build-snapshot.ts` creates and gives to the
+`buddy` user), syncs changes back after a tool call once the sync interval has
+passed and once more when the run ends, then removes the folder. An edit the
+agent makes in its last tool call therefore reaches the store only when `ant`
+exits, `ANT_MAX_IDLE` after the turn. It authenticates those calls with the work secret's sessions
+token, since the memory endpoints reject the environment key. `read_only`
+stores are enforced by `ant`'s file tools only; `bash` can still change the
+local copy.
 
 ## Upgrading the `ant` CLI
 
@@ -271,13 +287,41 @@ npm run deploy-orchestrator   # pushes the new id into the orchestrator's variab
   `workerVariables()`. A changed invocation does not fail loudly:
   `runCommand({ detached: true })` returns as soon as Buddy accepts the string, so
   dispatch reports success while `ant` exits on bad arguments, and the janitor
-  then re-dispatches that session every `JANITOR_SECONDS` forever. Identical from
-  1.10.0 through 1.23.0, so there is no drift to date.
+  then re-dispatches that session every `JANITOR_SECONDS` forever. The
+  dispatcher relies on `ANTHROPIC_WORK_SECRET_FILE`, the variable behind
+  `--work-secret-file`, which `ant` 1.x does not have, so `build-snapshot`
+  refuses an `ANT_VERSION` below 2.
 - Those older workers need no manual cleanup. The janitor destroys a worker once
   its session is terminated/archived/missing and reaps STOPPED ones after
   `MAX_IDLE_DAYS`. Reach for `npm run teardown` only to force every session onto
   the new `ant` at once — it also destroys the orchestrator and cuts off
   in-flight tool execution.
+
+### Upgrading an install from before the work secret file
+
+Workers used to hold `ANTHROPIC_ENVIRONMENT_KEY` and ran `ant` 1.x. They now
+need `ant` 2.x, the `/opt/cma-worker` and `/mnt/memory` directories from the
+current snapshot, and the work item's secret instead of the key. An old
+snapshot or an old worker does not work with the current orchestrator, so this
+upgrade is not optional:
+
+```bash
+# in .env: ANT_VERSION=2.11.0 (or later)
+npm run build-snapshot        # snapshot named cma-base-v2-<timestamp>
+# replace BUDDY_BASE_SNAPSHOT_ID in .env with the printed id
+npm run teardown              # optional, see below
+npm run deploy-orchestrator
+```
+
+- `deploy-orchestrator` refuses a `BUDDY_BASE_SNAPSHOT_ID` that does not exist
+  or was built before this change (its name lacks the `cma-base-v2-` prefix).
+- A worker created before this change is destroyed and recreated from the new
+  snapshot the next time its session runs, recognised by its missing
+  `cma-worker-v2` tag. Its `/workspace` is lost with it; collect anything you
+  need first.
+- Until then an old worker still holds the environment key. Run
+  `npm run teardown` to remove them all at once, and rotate the environment key
+  in the Console, since the agent in any old worker could read it.
 
 ## Known caveats (validate in your workspace)
 

@@ -8,13 +8,14 @@
 import { Sandbox } from "@buddy-works/sandbox-sdk";
 
 import { buddyConnection } from "../src/clients.ts";
+import { antVersionProblem, BASE_SNAPSHOT_PREFIX } from "../src/compat.ts";
 import { CONFIG } from "../src/config.ts";
 import { errLabel } from "../src/util.ts";
 
 // Runs as the `buddy` user (passwordless sudo). `dpkg --print-architecture`
 // yields amd64/arm64, which is verbatim how the published assets are named
 // (`ant_<version>_linux_<arch>.tar.gz`), so no arch translation table is needed.
-// Verified against the v1.23.0 release assets; re-check both when bumping
+// Verified against the v2.11.0 release assets; re-check both when bumping
 // ANT_VERSION (see GUIDE.md, "Upgrading the `ant` CLI").
 const ANT_INSTALL = [
   "set -eux",
@@ -23,10 +24,16 @@ const ANT_INSTALL = [
   "sudo chmod +x /usr/local/bin/ant",
   `sudo mkdir -p ${CONFIG.workspaceDir}`,
   `sudo chown buddy:buddy ${CONFIG.workspaceDir} || true`,
+  `sudo mkdir -p ${CONFIG.workSecretDir} ${CONFIG.memoryDir}`,
+  `sudo chown buddy:buddy ${CONFIG.workSecretDir} ${CONFIG.memoryDir}`,
+  `sudo chmod 700 ${CONFIG.workSecretDir}`,
   "ant --version",
 ].join("\n");
 
 async function main(): Promise<void> {
+  const versionProblem = antVersionProblem(CONFIG.antVersion);
+  if (versionProblem) throw new Error(versionProblem);
+
   const stamp = Date.now();
   console.log(`creating base builder sandbox (ant ${CONFIG.antVersion})...`);
   const sb = await Sandbox.create({
@@ -43,12 +50,11 @@ async function main(): Promise<void> {
     console.log("verifying ant is on PATH...");
     const probe = await sb.runCommand({ command: "ant --version", runtime: "BASH" });
     if (probe.data.status !== "SUCCESSFUL") {
-      const err = await sb.runCommand({ command: "ant --version", runtime: "BASH" }).then((c) => c.stderr());
-      throw new Error(`ant not runnable in base image: ${err}`);
+      throw new Error(`ant not runnable in base image: ${await probe.output()}`);
     }
 
     console.log("creating snapshot...");
-    const snap = await sb.createSnapshot({ name: `cma-base-${stamp}` });
+    const snap = await sb.createSnapshot({ name: `${BASE_SNAPSHOT_PREFIX}${stamp}` });
     await snap.waitUntilReady();
 
     console.log(`created snapshot ${snap.id}`);

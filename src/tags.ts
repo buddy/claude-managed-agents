@@ -8,11 +8,16 @@
  */
 
 export const TAG_MARKER = "cma";
+export const WORKER_LAYOUT_TAG = "cma-worker-v2";
 const STOPPED_AT_PREFIX = "cma-stopped-at-";
 
 /** Tags applied to a managed worker sandbox at creation. */
 export function workerTags(): string[] {
-  return [TAG_MARKER];
+  return [TAG_MARKER, WORKER_LAYOUT_TAG];
+}
+
+export function hasCurrentWorkerLayout(tags: string[] | undefined): boolean {
+  return (tags ?? []).includes(WORKER_LAYOUT_TAG);
 }
 
 /** Tags applied to the orchestrator sandbox. */

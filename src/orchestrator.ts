@@ -17,7 +17,6 @@ import {
   CONFIG,
   requireBaseSnapshotId,
   requireEnvironmentId,
-  requireEnvironmentKey,
   webhookSigningKey,
 } from "./config.ts";
 import { anthropicEnvClient, buddyConnection } from "./clients.ts";
@@ -31,7 +30,6 @@ import { Dispatcher } from "./worker-dispatch.ts";
 const log = makeLogger("orchestrator");
 
 const environmentId = requireEnvironmentId();
-const environmentKey = requireEnvironmentKey();
 const baseSnapshotId = requireBaseSnapshotId();
 
 const client = anthropicEnvClient();
@@ -46,7 +44,6 @@ const dispatcher = new Dispatcher({
   anthropic,
   sandboxes,
   environmentId,
-  environmentKey,
   baseSnapshotId,
   log,
   baseUrl: CONFIG.baseUrl,

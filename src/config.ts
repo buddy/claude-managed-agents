@@ -59,7 +59,7 @@ function resourceSpec(name: string, fallback: SandboxResources): SandboxResource
   return oneOf(name, SANDBOX_RESOURCES, fallback);
 }
 
-type TunnelRegion = NonNullable<CreateFromSnapshotConfig["endpoints"]>[number]["region"];
+type TunnelRegion = NonNullable<NonNullable<CreateFromSnapshotConfig["endpoints"]>[number]["region"]>;
 
 export const BETA = str("ANTHROPIC_BETA") ?? "managed-agents-2026-04-01";
 
@@ -87,11 +87,13 @@ export const CONFIG = {
   triggerMode: triggerMode(),
 
   // Worker runtime
-  antVersion: str("ANT_VERSION") ?? "1.23.0",
+  antVersion: str("ANT_VERSION") ?? "2.11.0",
   antMaxIdle: str("ANT_MAX_IDLE") ?? "60s",
   workerResources: (str("WORKER_RESOURCES") ?? "2x4") as SandboxResources,
   workerIdleTimeoutSec: num("WORKER_IDLE_TIMEOUT_SEC", 900),
   workspaceDir: str("WORKSPACE_DIR") ?? "/workspace",
+  workSecretDir: "/opt/cma-worker",
+  memoryDir: "/mnt/memory",
 
   // Orchestrator
   orchPort: num("ORCH_PORT", 8080),
@@ -112,7 +114,7 @@ export const CONFIG = {
 
   // Optional Anthropic overrides
   baseUrl: str("ANTHROPIC_BASE_URL"),
-  agentModel: str("ANTHROPIC_AGENT_MODEL") ?? "claude-opus-4-8",
+  agentModel: str("ANTHROPIC_AGENT_MODEL") ?? "claude-opus-5-5",
 } as const;
 
 // Required-on-demand accessors (throw with a clear message if unset).
